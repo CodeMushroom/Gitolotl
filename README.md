@@ -17,12 +17,12 @@ table at the top of that page. You only need one file:
 
 | Your computer | The file that ends in |
 | --- | --- |
-| **Windows** | `x64-setup.exe` |
-| **Mac with Apple silicon** (M1 or newer) | `aarch64.dmg` |
-| **Mac with Intel** | `x64.dmg` |
-| **Linux**, any distribution | `.AppImage` |
-| **Linux**, Debian / Ubuntu | `.deb` |
-| **Linux**, Fedora / RHEL | `.rpm` |
+| **Windows** | `Windows-setup.exe` |
+| **Mac with Apple silicon** (M1 or newer) | `Mac-AppleSilicon.dmg` |
+| **Mac with Intel** | `Mac-Intel.dmg` |
+| **Linux**, any distribution | `Linux.AppImage` |
+| **Linux**, Debian / Ubuntu | `Linux.deb` |
+| **Linux**, Fedora / RHEL | `Linux.rpm` |
 
 Everything else attached to a release (`.sig`, `.app.tar.gz`, `latest.json`) is for the built-in updater and
 can be ignored.
