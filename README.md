@@ -12,11 +12,20 @@ Built for developers who review and steer a lot of AI-written code.
 
 ## Install
 
-| Platform | Download from the latest release |
+Open the **[latest release](https://github.com/CodeMushroom/Gitolotl/releases/latest)** and use the download
+table at the top of that page. You only need one file:
+
+| Your computer | The file that ends in |
 | --- | --- |
-| **Windows** | `Gitolotl_x.y.z_x64-setup.exe` (per-user, no admin rights needed) or the `.msi` |
-| **macOS** | `Gitolotl_x.y.z_aarch64.dmg` for Apple silicon, `_x64.dmg` for Intel |
-| **Linux** | `.AppImage`, `.deb` or `.rpm` |
+| **Windows** | `x64-setup.exe` |
+| **Mac with Apple silicon** (M1 or newer) | `aarch64.dmg` |
+| **Mac with Intel** | `x64.dmg` |
+| **Linux**, any distribution | `.AppImage` |
+| **Linux**, Debian / Ubuntu | `.deb` |
+| **Linux**, Fedora / RHEL | `.rpm` |
+
+Everything else attached to a release (`.sig`, `.app.tar.gz`, `latest.json`) is for the built-in updater and
+can be ignored.
 
 You need `git` 2.31 or newer installed.
 
