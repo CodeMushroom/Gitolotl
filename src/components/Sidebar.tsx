@@ -2,6 +2,7 @@ import { useState } from "react";
 import type { ReactNode } from "react";
 import { A, backupMenu, describe, openExternal, prMenu, refMenu, remoteMenu, stashMenu } from "../actions";
 import type { RefInfo } from "../api";
+import { primaryFirst } from "../branches";
 import { fmtDate, st, useStore } from "../store";
 
 function Section({ title, count, action, children }: { title: string; count: number; action?: ReactNode; children: ReactNode }) {
@@ -50,7 +51,10 @@ export function Sidebar() {
   const f = filter.trim().toLowerCase();
   const match = (s: string) => !f || s.toLowerCase().includes(f);
 
-  const heads = refs.filter((r) => r.kind === "head" && match(r.short));
+  const defaultBranch = useStore((s) => s.defaultBranch);
+  // main / master / staging and friends stay at the top, however many branches there are
+  const heads = primaryFirst(refs.filter((r) => r.kind === "head" && match(r.short)), (r) => r.short, defaultBranch);
+  const pinEnd = (g: { pinned: unknown[]; rest: unknown[] }) => g.pinned.length > 0 && g.rest.length > 0 && <div className="sb-pin-end" />;
   const tags = refs.filter((r) => r.kind === "tag" && match(r.short)).reverse();
   const remoteRefs = refs.filter((r) => r.kind === "remote" && match(r.short));
 
@@ -58,14 +62,20 @@ export function Sidebar() {
     <div className="sidebar">
       <input className="sb-filter" placeholder="Filter branches, tags…" value={filter} onChange={(e) => setFilter(e.target.value)} />
       <div className="sb-scroll">
-        <Section title="Local" count={heads.length} action={<button className="mini" title="New branch" onClick={() => A.newBranch()}>+</button>}>
-          {heads.map((r) => <RefItem key={r.name} r={r} />)}
+        <Section title="Local" count={heads.pinned.length + heads.rest.length} action={<button className="mini" title="New branch" onClick={() => A.newBranch()}>+</button>}>
+          {heads.pinned.map((r) => <RefItem key={r.name} r={r} />)}
+          {pinEnd(heads)}
+          {heads.rest.map((r) => <RefItem key={r.name} r={r} />)}
         </Section>
         <Section title="Remote" count={remoteRefs.length} action={<button className="mini" title="Add remote" onClick={() => A.addRemote()}>+</button>}>
           {remotes.map((rm) => (
             <div key={rm.name}>
               <div className="sb-sub" title={rm.url} onContextMenu={(e) => remoteMenu(e, rm.name)}>{rm.name}</div>
-              {remoteRefs.filter((r) => r.short.startsWith(rm.name + "/")).map((r) => <RefItem key={r.name} r={r} label={r.short.slice(rm.name.length + 1)} />)}
+              {(() => {
+                const g = primaryFirst(remoteRefs.filter((r) => r.short.startsWith(rm.name + "/")), (r) => r.short.slice(rm.name.length + 1), defaultBranch);
+                const item = (r: RefInfo) => <RefItem key={r.name} r={r} label={r.short.slice(rm.name.length + 1)} />;
+                return <>{g.pinned.map(item)}{pinEnd(g)}{g.rest.map(item)}</>;
+              })()}
             </div>
           ))}
           {remotes.length === 0 && <div className="hint">No remotes yet</div>}

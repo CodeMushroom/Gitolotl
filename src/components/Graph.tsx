@@ -1,4 +1,5 @@
 import { memo, useEffect, useMemo, useRef, useState } from "react";
+import type React from "react";
 import { A, commitMenu } from "../actions";
 import { aiAgent } from "../ai";
 import type { Commit } from "../api";
@@ -59,7 +60,8 @@ const Row = memo(function Row({ c, row, width, selected, isHead, top, reviewed }
         {chips(c.refs).map((ch) => (
           <span
             key={ch.kind + ch.label}
-            className={`chip ${ch.kind}${ch.current ? " current" : ""}`}
+            className={`chip ${ch.kind}${ch.current ? " current" : ""}${row && ch.kind !== "tag" ? " lane" : ""}`}
+            style={row && ch.kind !== "tag" ? ({ "--chip": laneColor(row.color) } as React.CSSProperties) : undefined}
             title={ch.kind === "tag" ? `Tag ${ch.label}` : `Double-click to check out ${ch.label}`}
             onDoubleClick={(e) => { e.stopPropagation(); if (!ch.current) void A.checkout(ch.label, ch.kind); }}
           >

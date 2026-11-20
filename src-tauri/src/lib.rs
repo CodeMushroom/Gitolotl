@@ -80,6 +80,7 @@ pub fn run() {
             git::resolve_conflict,
             git::checkout,
             git::create_branch,
+            git::default_branch,
             git::delete_branch,
             git::rename_branch,
             git::delete_remote_branch,

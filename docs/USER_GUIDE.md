@@ -90,6 +90,15 @@ message, author or hash).
 - **Check out** by double-clicking a branch in the sidebar or its label in the graph. Checking out a
   remote branch creates a local tracking branch.
 - **Create** with the Branch button, the `+` in the sidebar, or "Create branch here…" on a commit.
+  The dialog asks where to **start from**: the default branch is offered first (with a warning, and the
+  remote's copy as an alternative, when your local one is behind), then the current branch, then any
+  other. If you have uncommitted changes it also asks whether to **bring them** to the new branch or
+  **leave them** behind as a stash on the branch you were on. Either way nothing is lost: if the changes
+  cannot come along, or the switch fails, your work is left exactly as it was.
+- **Primary branches** (the remote's default branch, plus `main`, `master`, `staging`, `develop` and
+  similar) are pinned to the top of the branch lists.
+- **Branch labels in the graph take the colour of their line.** Local branches are tinted, remote
+  branches are outlined with a cloud, and the checked-out branch is filled in.
 - Right-click a branch to **merge** it into the current branch (fast-forward, merge commit, ff-only or
   squash), **rebase** onto it, **rename** or **delete** it. Deleting a remote branch deletes it for
   everyone and says so.

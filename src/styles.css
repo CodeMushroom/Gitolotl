@@ -462,3 +462,13 @@ body {
 
 .update-pill { margin: 0 4px 4px 0; padding: 3px 12px; border-radius: 999px; border: 1px solid var(--accent); background: rgba(255, 127, 174, 0.14); color: var(--accent); font-weight: 600; font-size: 12px; cursor: pointer; animation: breathe 2.4s ease-in-out infinite; }
 .update-pill:hover { background: var(--accent); color: #2a0f1b; }
+
+/* ---------- branch badges follow their graph line ---------- */
+/* A badge on the graph takes the colour of the line its commit sits on. Local branches are
+   tinted, remote branches are outlined, and the checked-out branch is filled in. */
+.row .row-msg .chip.lane { color: var(--chip); border-color: color-mix(in srgb, var(--chip) 55%, transparent); background: color-mix(in srgb, var(--chip) 14%, transparent); }
+.row .row-msg .chip.lane.remote { background: transparent; }
+.row .row-msg .chip.lane.head.current { color: #0c1b21; background: var(--chip); border-color: transparent; font-weight: 700; box-shadow: 0 0 12px color-mix(in srgb, var(--chip) 55%, transparent); }
+
+/* primary branches pinned to the top of a list */
+.sb-pin-end { height: 1px; margin: 4px 16px 4px 26px; background: var(--line); opacity: 0.7; }

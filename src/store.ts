@@ -36,6 +36,8 @@ interface State {
   status: Status | null;
   commits: Commit[];
   refs: RefInfo[];
+  /** origin's default branch, e.g. "origin/main"; null when unknown */
+  defaultBranch: string | null;
   remotes: Remote[];
   stashes: Stash[];
   worktrees: Worktree[];
@@ -90,6 +92,7 @@ export const useStore = create<State>((set, get) => ({
   status: null,
   commits: [],
   refs: [],
+  defaultBranch: null,
   remotes: [],
   stashes: [],
   worktrees: [],
@@ -187,13 +190,14 @@ export const useStore = create<State>((set, get) => ({
     if (!repo) return;
     try {
       const { limit, showAll } = get();
-      const [status, commits, refs, remotes, stashes, worktrees, backups] = await Promise.all([
+      const [status, commits, refs, remotes, stashes, worktrees, backups, defaultBranch] = await Promise.all([
         api.status(repo), api.log(repo, limit, showAll), api.refs(repo), api.remotes(repo), api.stashes(repo),
         api.worktrees(repo).catch(() => []),
         api.backups(repo).catch(() => []),
+        api.defaultBranch(repo).catch(() => null),
       ]);
       if (get().repo?.path !== repo) return;
-      set({ status, commits, refs, remotes, stashes, worktrees, backups });
+      set({ status, commits, refs, remotes, stashes, worktrees, backups, defaultBranch });
       const sel = get().selected;
       if (sel?.type === "wip" && status.files.length === 0 && !status.state) set({ selected: null, openFile: null });
     } catch (e) {

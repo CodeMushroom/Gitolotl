@@ -9,7 +9,8 @@ import { api } from "./api";
 import type { Backup, Commit, FileStatus, PullRequest, RefInfo, Stash } from "./api";
 import { st } from "./store";
 import { aiAgent } from "./ai";
-import type { FormModal, MenuItem, Vision } from "./store";
+import { defaultName, primaryFirst } from "./branches";
+import type { Field, FormModal, MenuItem, Vision } from "./store";
 
 let pendingUpdate: Update | null = null;
 const loadPrompt = (): { version: string; at: number } => {
@@ -198,20 +199,78 @@ export const A = {
     }),
   worktrees: () => st().set({ modal: { kind: "worktrees" } }),
 
-  newBranch: (start?: string) =>
+  /** With `start` the starting point is fixed ("Create branch here"); without, the dialog asks. */
+  newBranch: async (start?: string) => {
+    const { repo, status, refs } = st();
+    if (!repo) return;
+    const cur = status?.branch ?? null;
+    const fields: Field[] = [{ key: "name", label: "Branch name", type: "text", placeholder: "feature/my-branch" }];
+
+    if (!start) {
+      const heads = refs.filter((r) => r.kind === "head");
+      const remotes = refs.filter((r) => r.kind === "remote" && !r.short.endsWith("/HEAD"));
+      // The default branch: what origin says, else the usual names.
+      const remoteDefault = await api.defaultBranch(repo.path).catch(() => null);
+      // The default branch: what origin says, else the first conventional name that exists.
+      const byName = primaryFirst(heads, (h) => h.short, remoteDefault);
+      const def = remoteDefault ? heads.find((h) => h.short === defaultName(remoteDefault)) : byName.pinned[0];
+      const opts: [string, string][] = [];
+      const add = (value: string, label: string) => { if (!opts.some((o) => o[0] === value)) opts.push([value, label]); };
+      const behind = def?.behind ? `, ${def.behind} behind ${def.upstream}` : "";
+      // A stale local default branch is the classic way to start from old code: offer the remote copy too.
+      const fresher = () => { if (def?.behind && def.upstream) add(def.upstream, `${def.upstream} · default branch as last fetched`); };
+      if (def && def.short === cur) {
+        add("", `${cur} · current and default branch${behind}`);
+        fresher();
+      } else if (def) {
+        // Like GitHub Desktop: new work normally starts from the default branch.
+        add(def.short, `${def.short} · default branch${behind}`);
+        fresher();
+      } else if (remoteDefault) {
+        add(remoteDefault, `${remoteDefault} · default branch`);
+      }
+      add("", cur ? `${cur} · current branch` : `${short(status?.head ?? "")} · current commit`);
+      for (const h of [...byName.pinned, ...byName.rest]) if (h.short !== cur) add(h.short, h.short);
+      for (const r of remotes) add(r.short, r.short);
+      fields.push({ key: "start", label: "Start from", type: "select", value: opts[0][0], options: opts });
+    }
+
+    fields.push({ key: "checkout", label: "Check out after creating", type: "checkbox", value: true });
+    const dirty = status?.files.length ?? 0;
+    if (dirty) {
+      fields.push({
+        key: "changes", type: "select", value: "bring",
+        label: `Your ${dirty} uncommitted ${dirty === 1 ? "change" : "changes"}`,
+        options: [
+          ["bring", "Bring them to the new branch"],
+          ["leave", `Leave them on ${cur ?? "the current commit"} (stashed)`],
+        ],
+      });
+    }
+
     form({
       title: start ? `Create branch at ${start.length === 40 ? short(start) : start}` : "Create branch",
-      fields: [
-        { key: "name", label: "Branch name", type: "text", placeholder: "feature/my-branch" },
-        { key: "checkout", label: "Check out after creating", type: "checkbox", value: true },
-      ],
+      fields,
       confirm: "Create",
       onSubmit: async (v) => {
         const name = s(v.name);
         if (!name) throw new Error("Branch name is required");
-        await st().act(`Create branch ${name}`, (r) => api.createBranch(r, name, start, !!v.checkout), true);
+        const from = start ?? (s(v.start) || undefined);
+        const changes = v.changes === "leave" ? "leave" : "bring";
+        // Errors stay in the dialog so a different choice can be made without retyping.
+        const repoPath = st().repo?.path;
+        if (!repoPath) return;
+        st().set({ busy: `Create branch ${name}` });
+        try {
+          const msg = await api.createBranch(repoPath, name, from, !!v.checkout, changes);
+          st().toast("ok", `Created branch ${name}${msg.includes("stayed behind") ? `\nYour uncommitted changes stayed on ${cur ?? "the previous commit"} as a stash.` : ""}`);
+        } finally {
+          st().set({ busy: null });
+          await st().refresh();
+        }
       },
-    }),
+    });
+  },
   checkout: (target: string, kind: "head" | "remote" | "tag" | "commit") =>
     st().act(`Checkout ${kind === "commit" ? short(target) : target}`, (r) => api.checkout(r, target, kind), true),
   renameBranch: (name: string) =>

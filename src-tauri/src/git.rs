@@ -1301,15 +1301,76 @@ pub fn checkout(repo: String, target: String, kind: String) -> R<String> {
     }
 }
 
+/// The default branch of the `origin` remote, as "origin/main". None when there is no such remote
+/// or it has never told us (a repository that was not cloned).
 #[tauri::command(async)]
-pub fn create_branch(repo: String, name: String, start: Option<String>, checkout: bool) -> R<String> {
+pub fn default_branch(repo: String) -> R<Option<String>> {
+    Ok(run(&repo, &["symbolic-ref", "--short", "-q", "refs/remotes/origin/HEAD"])
+        .ok()
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty()))
+}
+
+/// Create a branch, optionally from another starting point, and optionally switch to it.
+///
+/// `changes` says what happens to uncommitted work when switching:
+/// - "bring" (the default): it comes along. git refuses, changing nothing, if it cannot.
+/// - "leave": it is stashed first, so it stays behind with the branch it was made on.
+///
+/// The new branch never tracks its starting point: a branch cut from origin/main is not
+/// main, and must not push there.
+#[tauri::command(async)]
+pub fn create_branch(repo: String, name: String, start: Option<String>, checkout: bool, changes: Option<String>) -> R<String> {
     rf(&name)?;
-    let mut a = if checkout { vec!["checkout", "-b", name.as_str()] } else { vec!["branch", name.as_str()] };
     if let Some(s) = &start {
         rf(s)?;
-        a.push(s);
     }
-    run_msg(&repo, &a)
+    let leave = match changes.as_deref() {
+        None | Some("bring") => false,
+        Some("leave") => true,
+        Some(other) => return Err(format!("Invalid option: {other:?}")),
+    };
+    if !checkout {
+        let mut a = vec!["branch", "--no-track", name.as_str()];
+        a.extend(start.as_deref());
+        return run_msg(&repo, &a);
+    }
+    let mut a = vec!["checkout", "--no-track", "-b", name.as_str()];
+    a.extend(start.as_deref());
+
+    let dirty = !run(&repo, &["status", "--porcelain", "--untracked-files=all"])?.trim().is_empty();
+    if !(leave && dirty) {
+        return run_msg(&repo, &a).map_err(|e| {
+            if e.contains("would be overwritten") {
+                format!("Your uncommitted changes cannot be brought along: they touch files that differ on the starting point. Nothing was changed. Commit them, or choose to leave them behind.\n\n{e}")
+            } else {
+                e
+            }
+        });
+    }
+
+    // Leave the work behind: stash it, labelled with where it came from.
+    let from = run(&repo, &["rev-parse", "--abbrev-ref", "HEAD"]).map(|s| s.trim().to_string()).unwrap_or_default();
+    let from = if from.is_empty() || from == "HEAD" { "the previous commit".to_string() } else { from };
+    let stash_tip = |repo: &str| run(repo, &["rev-parse", "-q", "--verify", "refs/stash"]).map(|s| s.trim().to_string()).unwrap_or_default();
+    let before = stash_tip(&repo);
+    let label = format!("Left on {from} when creating {name}");
+    run_msg(&repo, &["stash", "push", "--include-untracked", "-m", &label])?;
+    let after = stash_tip(&repo);
+    if after.is_empty() || after == before {
+        return Err("Could not set your uncommitted changes aside, so the branch was not created. Nothing was changed.".into());
+    }
+    match run_msg(&repo, &a) {
+        Ok(m) => Ok(format!("{m}\nYour uncommitted changes stayed behind as a stash: \"{label}\".")),
+        Err(e) => {
+            // Put the work back exactly as it was. Only ever pop the stash we just made.
+            if stash_tip(&repo) == after && run_msg(&repo, &["stash", "pop", "--index"]).is_ok() {
+                Err(e)
+            } else {
+                Err(format!("{e}\n\nYour uncommitted changes are safe in the newest stash: \"{label}\"."))
+            }
+        }
+    }
 }
 
 #[tauri::command(async)]
@@ -1729,12 +1790,12 @@ mod tests {
         assert_eq!(get_log(repo.clone(), 10, false, Some("a.txt".into())).unwrap().len(), 3);
 
         // branches, tags, refs
-        create_branch(repo.clone(), "feature/x".into(), Some(log[2].hash.clone()), false).unwrap();
+        create_branch(repo.clone(), "feature/x".into(), Some(log[2].hash.clone()), false, None).unwrap();
         create_tag(repo.clone(), "v1".into(), None, Some("release".into())).unwrap();
         let refs = get_refs(repo.clone()).unwrap();
         assert!(refs.iter().any(|x| x.short == "feature/x" && x.kind == "head" && !x.is_head));
         assert!(refs.iter().any(|x| x.short == "v1" && x.kind == "tag" && x.hash == log[0].hash));
-        assert!(create_branch(repo.clone(), "--evil".into(), None, false).is_err());
+        assert!(create_branch(repo.clone(), "--evil".into(), None, false, None).is_err());
 
         // interactive rebase: squash "third" into "second"
         let cands = rebase_candidates(repo.clone(), log[1].hash.clone()).unwrap();
@@ -1827,6 +1888,11 @@ mod tests {
         let repo = repo_init(root.to_string_lossy().into_owned()).unwrap().path;
         set_identity(repo.clone(), "Axo Lotl".into(), "axo@example.com".into(), false).unwrap();
         run(&repo, &["config", "commit.gpgsign", "false"]).unwrap();
+        // git may start background maintenance after a commit, which creates and removes
+        // lock files on its own schedule. Tests that compare the repository byte for byte
+        // must only see what Gitolotl itself does.
+        run(&repo, &["config", "gc.auto", "0"]).unwrap();
+        run(&repo, &["config", "maintenance.auto", "false"]).unwrap();
         (root, repo)
     }
 
@@ -1880,7 +1946,7 @@ mod tests {
         assert_eq!(show(&snap.hash, "a.txt"), "uncommitted three\n");
 
         // 3. force-deleted branch, deleted tag, dropped stash, amended commit
-        create_branch(repo.clone(), "doomed".into(), Some(second.clone()), false).unwrap();
+        create_branch(repo.clone(), "doomed".into(), Some(second.clone()), false, None).unwrap();
         delete_branch(repo.clone(), "doomed".into(), true).unwrap();
         create_tag(repo.clone(), "v9".into(), Some(second.clone()), None).unwrap();
         delete_tag(repo.clone(), "v9".into()).unwrap();
@@ -1955,7 +2021,7 @@ mod tests {
         assert_eq!(head(), second);
 
         // deleted branch and tag and dropped stash come back under their own names
-        create_branch(repo.clone(), "feature/doomed".into(), Some(first.clone()), false).unwrap();
+        create_branch(repo.clone(), "feature/doomed".into(), Some(first.clone()), false, None).unwrap();
         delete_branch(repo.clone(), "feature/doomed".into(), true).unwrap();
         let b = newest("delete-branch");
         assert_eq!(b.detail, "feature/doomed");
@@ -1989,7 +2055,7 @@ mod tests {
         stage_all(repo.clone()).unwrap();
         commit(repo.clone(), "base".into(), false, false).unwrap();
         let main = cur_branch(&repo);
-        create_branch(repo.clone(), "other".into(), None, true).unwrap();
+        create_branch(repo.clone(), "other".into(), None, true, None).unwrap();
         std::fs::write(p("a.txt"), "theirs\n").unwrap();
         stage_all(repo.clone()).unwrap();
         commit(repo.clone(), "theirs".into(), false, false).unwrap();
@@ -2045,6 +2111,84 @@ mod tests {
         let _ = std::fs::remove_dir_all(&wt);
     }
 
+    /// Creating a branch must never lose uncommitted work, whichever option is chosen and
+    /// whether or not the switch succeeds.
+    #[test]
+    fn branching_keeps_uncommitted_work() {
+        let (root, repo) = temp_repo("branching");
+        // compare file contents byte for byte, whatever the machine's line-ending setting
+        run(&repo, &["config", "core.autocrlf", "false"]).unwrap();
+        let p = |n: &str| Path::new(&repo).join(n);
+        let read = |n: &str| std::fs::read_to_string(p(n)).unwrap();
+        std::fs::write(p("a.txt"), "base\n").unwrap();
+        std::fs::write(p("b.txt"), "base\n").unwrap();
+        stage_all(repo.clone()).unwrap();
+        commit(repo.clone(), "base".into(), false, false).unwrap();
+        let main = cur_branch(&repo);
+        create_branch(repo.clone(), "side".into(), None, true, None).unwrap();
+        std::fs::write(p("a.txt"), "side\n").unwrap();
+        stage_all(repo.clone()).unwrap();
+        commit(repo.clone(), "side".into(), false, false).unwrap();
+        checkout(repo.clone(), main.clone(), "head".into()).unwrap();
+        assert_eq!(default_branch(repo.clone()).unwrap(), None, "no remote, no default");
+        assert!(create_branch(repo.clone(), "x".into(), None, true, Some("nonsense".into())).is_err());
+
+        // uncommitted work: a staged edit and a new file
+        std::fs::write(p("b.txt"), "my edit\n").unwrap();
+        stage(repo.clone(), vec!["b.txt".into()]).unwrap();
+        std::fs::write(p("new.txt"), "brand new\n").unwrap();
+
+        // bring: the work comes along
+        create_branch(repo.clone(), "f1".into(), None, true, Some("bring".into())).unwrap();
+        assert_eq!(cur_branch(&repo), "f1");
+        assert_eq!(read("b.txt"), "my edit\n");
+        assert_eq!(read("new.txt"), "brand new\n");
+        assert_eq!(get_status(repo.clone()).unwrap().files.len(), 2);
+
+        // leave: the new branch starts clean, the work waits in a labelled stash
+        let msg = create_branch(repo.clone(), "f2".into(), Some("side".into()), true, Some("leave".into())).unwrap();
+        assert!(msg.contains("stayed behind"), "{msg}");
+        assert_eq!(cur_branch(&repo), "f2");
+        assert_eq!(read("a.txt"), "side\n");
+        assert!(get_status(repo.clone()).unwrap().files.is_empty());
+        assert!(!p("new.txt").exists());
+        let stashes = get_stashes(repo.clone()).unwrap();
+        assert_eq!(stashes.len(), 1);
+        assert!(stashes[0].message.contains("Left on f1 when creating f2"), "{}", stashes[0].message);
+        // ...and comes back whole, staged state included
+        checkout(repo.clone(), "f1".into(), "head".into()).unwrap();
+        stash_op(repo.clone(), "pop".into(), 0).unwrap();
+        assert_eq!(read("b.txt"), "my edit\n");
+        assert_eq!(read("new.txt"), "brand new\n");
+        assert!(get_stashes(repo.clone()).unwrap().is_empty());
+
+        // bring, but the work collides with the starting point: refused, nothing changes
+        std::fs::write(p("a.txt"), "precious\n").unwrap();
+        let e = create_branch(repo.clone(), "f3".into(), Some("side".into()), true, Some("bring".into())).unwrap_err();
+        assert!(e.contains("Nothing was changed"), "{e}");
+        assert_eq!(cur_branch(&repo), "f1");
+        assert_eq!(read("a.txt"), "precious\n");
+        assert!(run(&repo, &["show-ref", "--verify", "-q", "refs/heads/f3"]).is_err());
+
+        // leave, but the switch fails (name taken): the work is put straight back
+        assert!(create_branch(repo.clone(), "side".into(), Some(main.clone()), true, Some("leave".into())).is_err());
+        assert_eq!(cur_branch(&repo), "f1");
+        assert_eq!(read("a.txt"), "precious\n");
+        assert_eq!(read("b.txt"), "my edit\n");
+        assert_eq!(read("new.txt"), "brand new\n");
+        assert_eq!(get_status(repo.clone()).unwrap().files.len(), 3);
+        assert!(get_stashes(repo.clone()).unwrap().is_empty(), "no stray stash left behind");
+
+        // an existing stash is never touched when there is nothing of ours to pop
+        stash_push(repo.clone(), "someone else's".into(), true).unwrap();
+        assert!(create_branch(repo.clone(), "side".into(), None, true, Some("leave".into())).is_err());
+        let stashes = get_stashes(repo.clone()).unwrap();
+        assert_eq!(stashes.len(), 1);
+        assert!(stashes[0].message.contains("someone else's"));
+
+        let _ = std::fs::remove_dir_all(root);
+    }
+
     /// Looking at a repository must never modify it.
     #[test]
     fn reading_never_writes() {
@@ -2087,7 +2231,8 @@ mod tests {
 
         let mut after = vec![];
         fingerprint(Path::new(&repo), &mut after);
-        assert_eq!(before.len(), after.len(), "a read command created or removed files");
+        let names = |v: &[(String, Vec<u8>)]| v.iter().map(|x| x.0.clone()).collect::<Vec<_>>();
+        assert_eq!(names(&before), names(&after), "a read command created or removed files");
         for (b, a) in before.iter().zip(&after) {
             assert_eq!(b.0, a.0);
             assert!(b.1 == a.1, "a read command modified {}", b.0);

@@ -3,6 +3,13 @@
 The section for a version becomes the "What's new" text of its release and of the in-app update prompt.
 Keep entries short and written for users.
 
+## Unreleased
+
+- Create branch now asks where to start from (default branch first, as in GitHub Desktop) and whether to bring your uncommitted changes along or leave them behind as a stash.
+- Primary branches (default, main, master, staging, develop) are pinned to the top of the branch lists.
+- Branch labels in the graph now match the colour of their line.
+- Gitolotl is now open source under the Apache License 2.0.
+
 ## 0.2.1
 
 - Colour settings for colour-blind users: red-green and blue-yellow presets and a high-contrast mode, in Settings.
