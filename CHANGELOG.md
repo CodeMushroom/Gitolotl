@@ -3,7 +3,7 @@
 The section for a version becomes the "What's new" text of its release and of the in-app update prompt.
 Keep entries short and written for users.
 
-## Unreleased
+## 0.2.2
 
 - Create branch now asks where to start from (default branch first, as in GitHub Desktop) and whether to bring your uncommitted changes along or leave them behind as a stash.
 - Primary branches (default, main, master, staging, develop) are pinned to the top of the branch lists.
