@@ -1,0 +1,40 @@
+name: build
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, macos-latest, ubuntu-22.04]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Linux dependencies
+        if: startsWith(matrix.os, 'ubuntu')
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf
+      # The lockfile is written by npm 11; npm 10 (bundled with Node 22) rejects it.
+      - run: npm install -g npm@11.6.2
+      - run: npm ci
+      - name: Backend tests
+        working-directory: src-tauri
+        run: |
+          git config --global init.defaultBranch main
+          cargo test --lib
+      # Installers are built and signed by release.yml; here we only prove it compiles.
+      - name: Compile app
+        run: npm run tauri build -- --no-bundle

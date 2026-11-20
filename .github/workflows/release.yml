@@ -1,0 +1,174 @@
+name: release
+
+# Push a tag like v0.2.0 to build signed installers for Windows, macOS and Linux and
+# publish them, with latest.json for the in-app updater, as a Release on this repository.
+#
+# The release is created as a DRAFT, every platform uploads into it, and only then is
+# it published. Installed apps read "latest", so they never see a half-finished release
+# whose update manifest is missing their platform.
+on:
+  push:
+    tags: ["v*"]
+
+# Each job asks for the least it needs; only jobs that touch the release may write.
+permissions:
+  contents: read
+
+env:
+  RELEASES_REPO: ${{ github.repository }}
+
+jobs:
+  create:
+    runs-on: ubuntu-22.04
+    permissions:
+      contents: write
+    outputs:
+      id: ${{ steps.draft.outputs.id }}
+      version: ${{ steps.v.outputs.version }}
+      notes: ${{ steps.notes.outputs.text }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Tag must match app version
+        id: v
+        run: |
+          v=$(node -p "require('./src-tauri/tauri.conf.json').version")
+          if [ "v$v" != "$GITHUB_REF_NAME" ]; then
+            echo "Tag $GITHUB_REF_NAME does not match tauri.conf.json version $v" >&2
+            exit 1
+          fi
+          echo "version=$v" >> "$GITHUB_OUTPUT"
+      - name: Release notes from CHANGELOG.md
+        id: notes
+        run: |
+          awk -v v="${{ steps.v.outputs.version }}" '/^## / { on = ($2 == v); next } on' CHANGELOG.md | sed -e '/./,$!d' > notes.md
+          {
+            echo "text<<GITOLOTL_NOTES_EOF"
+            echo "What's new in ${{ steps.v.outputs.version }}"
+            echo
+            cat notes.md
+            echo "GITOLOTL_NOTES_EOF"
+          } >> "$GITHUB_OUTPUT"
+      - name: Create the draft release
+        id: draft
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          V: ${{ steps.v.outputs.version }}
+        run: |
+          B="https://github.com/$RELEASES_REPO/releases/download/$GITHUB_REF_NAME"
+          {
+            echo "## What's new in $V"
+            echo
+            cat notes.md
+            cat <<EOF
+
+          ## Download
+
+          Pick the one file for your computer:
+
+          | Your computer | Download |
+          | --- | --- |
+          | **Windows** | [Gitolotl-$V-Windows-setup.exe]($B/Gitolotl-$V-Windows-setup.exe) |
+          | **Mac with Apple silicon** (M1 or newer) | [Gitolotl-$V-Mac-AppleSilicon.dmg]($B/Gitolotl-$V-Mac-AppleSilicon.dmg) |
+          | **Mac with Intel** | [Gitolotl-$V-Mac-Intel.dmg]($B/Gitolotl-$V-Mac-Intel.dmg) |
+          | **Linux**, any distribution | [Gitolotl-$V-Linux.AppImage]($B/Gitolotl-$V-Linux.AppImage) |
+          | **Linux**, Debian / Ubuntu | [Gitolotl-$V-Linux.deb]($B/Gitolotl-$V-Linux.deb) |
+          | **Linux**, Fedora / RHEL | [Gitolotl-$V-Linux.rpm]($B/Gitolotl-$V-Linux.rpm) |
+
+          Windows IT deployments can use the [.msi]($B/Gitolotl-$V-Windows.msi) instead.
+
+          **You can ignore everything else in the list below.** The \`.sig\`, \`.app.tar.gz\` and \`latest.json\` files are used by Gitolotl's built-in updater, and the "Source code" archives are for people who want to build Gitolotl themselves.
+
+          First launch shows a security warning because the installers are not yet signed with a Windows or Apple certificate. On Windows choose **More info → Run anyway**; on macOS right-click the app and choose **Open**.
+
+          Gitolotl is made by CodeMushroom and is open source under the Apache License 2.0.
+          EOF
+          } > body.md
+          jq -n --arg tag "$GITHUB_REF_NAME" --arg name "Gitolotl $GITHUB_REF_NAME" --rawfile body body.md \
+            '{tag_name: $tag, name: $name, body: $body, draft: true, target_commitish: "main"}' > payload.json
+          id=$(curl -sS --fail-with-body -X POST "https://api.github.com/repos/$RELEASES_REPO/releases" \
+            -H "Authorization: Bearer $GH_TOKEN" -H "Accept: application/vnd.github+json" -d @payload.json | jq -r .id)
+          test -n "$id" && test "$id" != "null"
+          echo "id=$id" >> "$GITHUB_OUTPUT"
+
+  build:
+    needs: create
+    permissions:
+      contents: write
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # `asset` is the download file name; [version], [setup] and [ext] are filled in by the action.
+          - os: windows-latest
+            args: ""
+            asset: "Gitolotl-[version]-Windows[setup][ext]"
+          - os: macos-latest
+            args: "--target aarch64-apple-darwin"
+            asset: "Gitolotl-[version]-Mac-AppleSilicon[ext]"
+          - os: macos-latest
+            args: "--target x86_64-apple-darwin"
+            asset: "Gitolotl-[version]-Mac-Intel[ext]"
+          - os: ubuntu-22.04
+            args: ""
+            asset: "Gitolotl-[version]-Linux[ext]"
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - uses: dtolnay/rust-toolchain@39008827e6b4319a349e9a42dfc90579dd25f1ca # stable
+        with:
+          toolchain: stable
+          targets: ${{ matrix.os == 'macos-latest' && 'aarch64-apple-darwin,x86_64-apple-darwin' || '' }}
+      - name: Linux dependencies
+        if: startsWith(matrix.os, 'ubuntu')
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf
+      # The lockfile is written by npm 11; npm 10 (bundled with Node 22) rejects it.
+      - run: npm install -g npm@11.6.2
+      - run: npm ci
+      - uses: tauri-apps/tauri-action@84b9d35b5fc46c1e45415bdb6144030364f7ebc5 # v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        with:
+          releaseId: ${{ needs.create.outputs.id }}
+          # Still needed: download links in latest.json are written for this tag, not the draft.
+          tagName: ${{ github.ref_name }}
+          # Shown by the in-app update prompt.
+          releaseBody: ${{ needs.create.outputs.notes }}
+          assetNamePattern: ${{ matrix.asset }}
+          # Windows installs from the setup.exe update through the setup.exe.
+          updaterJsonPreferNsis: true
+          args: ${{ matrix.args }}
+
+  publish:
+    # Only when every platform succeeded. If one fails the draft stays hidden: fix, re-run
+    # the failed job, then re-run this one.
+    needs: [create, build]
+    runs-on: ubuntu-22.04
+    permissions:
+      contents: write
+    steps:
+      - name: Check the update manifest covers every platform
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          api="https://api.github.com/repos/$RELEASES_REPO/releases/${{ needs.create.outputs.id }}"
+          asset=$(curl -sS --fail-with-body -H "Authorization: Bearer $GH_TOKEN" "$api/assets?per_page=100" | jq -r '.[] | select(.name == "latest.json") | .url')
+          curl -sS --fail-with-body -L -H "Authorization: Bearer $GH_TOKEN" -H "Accept: application/octet-stream" "$asset" > latest.json
+          jq -r '.platforms | keys | join(", ")' latest.json
+          for p in windows-x86_64 windows-x86_64-nsis darwin-aarch64 darwin-x86_64 linux-x86_64; do
+            jq -e --arg p "$p" '.platforms[$p].signature | length > 0' latest.json > /dev/null || { echo "latest.json has no entry for $p" >&2; exit 1; }
+          done
+      - name: Publish the release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          curl -sS --fail-with-body -X PATCH "https://api.github.com/repos/$RELEASES_REPO/releases/${{ needs.create.outputs.id }}" \
+            -H "Authorization: Bearer $GH_TOKEN" -H "Accept: application/vnd.github+json" \
+            -d '{"draft": false, "make_latest": "true"}' | jq -r '"published \(.tag_name): \(.html_url)"'

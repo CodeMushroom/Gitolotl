@@ -6,12 +6,13 @@
 
 ### The Git client for reviewing AI-written code
 
-A fast, friendly Git GUI for **Windows, macOS and Linux** with an undo for every destructive action.<br />
+A fast, friendly, **open-source** Git GUI for **Windows, macOS and Linux** with an undo for every destructive action.<br />
 Made by [CodeMushroom](https://github.com/CodeMushroom).
 
 [![Latest release](https://img.shields.io/github/v/release/CodeMushroom/Gitolotl?label=latest&color=ff7fae)](https://github.com/CodeMushroom/Gitolotl/releases/latest)
 [![Downloads](https://img.shields.io/github/downloads/CodeMushroom/Gitolotl/total?color=4fd1c5)](https://github.com/CodeMushroom/Gitolotl/releases)
 ![Platforms](https://img.shields.io/badge/platforms-Windows%20%7C%20macOS%20%7C%20Linux-8fa8ff)
+[![License: Apache 2.0](https://img.shields.io/badge/license-Apache%202.0-c9a0ff)](LICENSE)
 
 ### [⬇ Download Gitolotl](https://github.com/CodeMushroom/Gitolotl/releases/latest)
 
@@ -121,8 +122,27 @@ and the terminal freely.
 **Which AI tools does it recognise?** Any commit whose author or `Co-authored-by` line names Claude,
 GitHub Copilot, Cursor, Codex, Gemini, Devin, Aider, Windsurf, Amazon Q, or a bot account.
 
-**Where is the source code?** Gitolotl is developed privately. This repository hosts the installers and
-update files.
+**Is it free and open source?** Yes. Gitolotl is free, and its source is in this repository under the
+[Apache License 2.0](LICENSE). You can read exactly what it does with your repositories and credentials.
+
+## Build it yourself
+
+You need Node 22+, npm 11+, Rust (stable), `git`, and the
+[Tauri prerequisites](https://tauri.app/start/prerequisites/) for your platform.
+
+```bash
+npm install
+```
+
+```bash
+npm run tauri dev
+```
+
+- [User guide](docs/USER_GUIDE.md): every feature and keyboard shortcut
+- [Safety](docs/SAFETY.md): what protects your repository, and how to recover anything
+- [Architecture](docs/ARCHITECTURE.md): how the code is laid out and the security model
+- [Releasing](docs/RELEASING.md): installers, the auto-updater, signing
+- [Contributing](CONTRIBUTING.md): how to send a change
 
 ## Feedback
 
@@ -133,6 +153,9 @@ If Gitolotl saves you time, a ⭐ on this repository helps other developers find
 
 <div align="center">
 
-Gitolotl is made by **CodeMushroom**. Copyright © 2026 CodeMushroom. All rights reserved.
+Gitolotl is made by **[CodeMushroom](https://github.com/CodeMushroom)**. Copyright © 2026 CodeMushroom.
+
+Licensed under the [Apache License 2.0](LICENSE). Forks must keep the [NOTICE](NOTICE) crediting CodeMushroom.<br />
+The Gitolotl name and axolotl logo are CodeMushroom trademarks: see [TRADEMARKS.md](TRADEMARKS.md).
 
 </div>

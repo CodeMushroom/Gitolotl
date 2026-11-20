@@ -1,0 +1,60 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "Gitolotl",
+  "version": "0.2.1",
+  "identifier": "com.codemushroom.gitolotl",
+  "build": {
+    "beforeDevCommand": "npm run dev",
+    "devUrl": "http://localhost:1420",
+    "beforeBuildCommand": "npm run build",
+    "frontendDist": "../dist"
+  },
+  "app": {
+    "windows": [
+      {
+        "label": "main",
+        "title": "Gitolotl",
+        "width": 1440,
+        "height": 900,
+        "minWidth": 960,
+        "minHeight": 600
+      }
+    ],
+    "security": {
+      "csp": "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https://www.gravatar.com https://avatars.githubusercontent.com; font-src 'self'; connect-src ipc: http://ipc.localhost; object-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'",
+      "devCsp": null,
+      "freezePrototype": true
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": "all",
+    "icon": [
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/128x128@2x.png",
+      "icons/icon.icns",
+      "icons/icon.ico"
+    ],
+    "createUpdaterArtifacts": true,
+    "publisher": "CodeMushroom",
+    "shortDescription": "A friendly, secure Git client",
+    "category": "DeveloperTool",
+    "homepage": "https://github.com/CodeMushroom/Gitolotl",
+    "windows": {
+      "nsis": {
+        "installMode": "currentUser"
+      }
+    },
+    "copyright": "Copyright © 2026 CodeMushroom",
+    "longDescription": "Gitolotl is a friendly, secure Git client by CodeMushroom."
+  },
+  "plugins": {
+    "updater": {
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDFGQzM3MTE5MDlEQTg5NzgKUldSNGlkb0pHWEhESHdxSTUxYnFXREY0TjlpbnlUN3pLQlBLY3J6UTR2THFERzlPV1ZLRGF1b0QK",
+      "endpoints": [
+        "https://github.com/CodeMushroom/Gitolotl/releases/latest/download/latest.json"
+      ]
+    }
+  }
+}
