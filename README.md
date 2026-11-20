@@ -70,13 +70,13 @@ history, `Enter` reviews, `r` marks reviewed.
 - Fetch, pull, push, and force-push that refuses to overwrite a teammate's work
 - GitHub pull requests: list, open and check out
 - Several repositories in tabs
-- Built-in, signed auto-updates
+- Author pictures: set your own, or opt in to GitHub and Gravatar pictures
+- Built-in, signed auto-updates with a reminder when a new version is out
 
 ## Accessible
 
-Colour presets for red-green and blue-yellow colour blindness and a high-contrast mode are coming in the
-next release. Diffs always carry `+` / `−` signs and status badges carry letters, so nothing depends on
-colour alone.
+Settings has colour presets for red-green and blue-yellow colour blindness and a high-contrast mode.
+Diffs always carry `+` / `−` signs and status badges carry letters, so nothing depends on colour alone.
 
 ![The review view using the red-green colour-blind preset, with blue additions and orange removals](assets/vision-redgreen.png)
 
