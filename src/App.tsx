@@ -7,6 +7,7 @@ import { ContextMenu, ModalHost, Toasts } from "./components/Overlays";
 import { Palette } from "./components/Palette";
 import { Panel } from "./components/Panel";
 import { Sidebar } from "./components/Sidebar";
+import { Splitter } from "./components/Splitter";
 import { Tabs, Toolbar } from "./components/Toolbar";
 import { st, useStore } from "./store";
 
@@ -126,7 +127,9 @@ export default function App() {
           <Toolbar />
           <div className="main">
             <Sidebar />
+            <Splitter k="sidebar" grow={1} min={160} max={600} />
             <div className="center">{openFile ? <DiffView /> : <Graph />}</div>
+            <Splitter k="panel" grow={-1} min={260} max={900} />
             <Panel />
           </div>
         </>

@@ -7,8 +7,11 @@ import { laneColor, layoutGraph } from "../graph";
 import type { GraphRow } from "../graph";
 import { fmtDate, fullDate, st, useStore } from "../store";
 import { Avatar } from "./Icon";
+import { Splitter } from "./Splitter";
 
 const H = 28;
+/** height of the column header, which scrolls with nothing and sits above the rows */
+const HEAD = 24;
 const LANE = 16;
 const MAX_LANES = 14;
 const x = (lane: number) => 12 + Math.min(lane, MAX_LANES) * LANE;
@@ -105,7 +108,11 @@ export function Graph() {
   const showWip = !q && !aiOnly && (wipCount > 0 || !!status?.state);
   const offset = showWip ? 1 : 0;
   const total = view.length + offset;
-  const width = Math.min(layout.maxCols, MAX_LANES + 1) * LANE + 12;
+  // The lane column is as wide as the graph needs, unless the user dragged it narrower.
+  const natural = Math.min(layout.maxCols, MAX_LANES + 1) * LANE + 12;
+  const cap = useStore((s) => s.layout.graph);
+  const width = cap == null ? natural : Math.max(28, Math.min(natural, cap));
+  const showGraph = !q && !aiOnly;
 
   useEffect(() => {
     const el = ref.current;
@@ -121,7 +128,7 @@ export function Graph() {
     if (i !== -1) {
       const y = (i + offset) * H;
       const el = ref.current;
-      if (y < el.scrollTop || y > el.scrollTop + el.clientHeight - H) el.scrollTop = Math.max(0, y - el.clientHeight / 2);
+      if (y < el.scrollTop || y > el.scrollTop + el.clientHeight - H - HEAD) el.scrollTop = Math.max(0, y - el.clientHeight / 2);
     }
     st().set({ scrollTo: null });
   }, [scrollTo, view, offset]);
@@ -153,7 +160,7 @@ export function Graph() {
 
   return (
     <div
-      className="graph"
+      className={`graph${width < natural ? " clipped" : ""}`}
       ref={ref}
       onScroll={(e) => {
         const el = e.currentTarget;
@@ -164,6 +171,13 @@ export function Graph() {
         }
       }}
     >
+      <div className="graph-head">
+        {showGraph && <div style={{ width }}><span>Graph</span><Splitter k="graph" grow={1} min={28} max={natural} base={natural} className="at-end" /></div>}
+        <div className="gh-msg"><span>Description</span></div>
+        <div className="gh-author"><Splitter k="author" grow={-1} min={60} max={400} /><span>Author</span></div>
+        <div className="gh-date"><Splitter k="date" grow={-1} min={50} max={200} /><span>Date</span></div>
+        <div className="gh-hash"><span>Commit</span></div>
+      </div>
       <div style={{ height: total * H, position: "relative" }}>{items}</div>
       {total === 0 && (
         <div className="empty">

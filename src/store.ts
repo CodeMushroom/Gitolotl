@@ -29,7 +29,20 @@ const load = <T,>(k: string, d: T): T => {
 };
 const save = (k: string, v: unknown) => { try { localStorage.setItem(k, JSON.stringify(v)); } catch { /* ignore */ } };
 
+/** Widths the user can drag, in pixels. `graph` caps the lane column; null shows every lane. */
+export interface Layout { sidebar: number; panel: number; author: number; date: number; graph: number | null }
+export const LAYOUT: Layout = { sidebar: 250, panel: 380, author: 150, date: 86, graph: null };
+const applyLayout = (l: Layout) => {
+  const s = document.documentElement.style;
+  s.setProperty("--sb-w", `${l.sidebar}px`);
+  s.setProperty("--panel-w", `${l.panel}px`);
+  s.setProperty("--col-author", `${l.author}px`);
+  s.setProperty("--col-date", `${l.date}px`);
+};
+
 interface State {
+  layout: Layout;
+  setLayout: (p: Partial<Layout>) => void;
   repo: RepoInfo | null;
   tabs: RepoInfo[];
   recent: RepoInfo[];
@@ -86,6 +99,13 @@ interface State {
 let toastId = 1;
 
 export const useStore = create<State>((set, get) => ({
+  layout: (() => { const l = { ...LAYOUT, ...load<Partial<Layout>>("gitolotl.layout", {}) }; applyLayout(l); return l; })(),
+  setLayout: (p) => {
+    const layout = { ...get().layout, ...p };
+    save("gitolotl.layout", layout);
+    applyLayout(layout);
+    set({ layout });
+  },
   repo: null,
   tabs: load<RepoInfo[]>("gitolotl.tabs", []),
   recent: load<RepoInfo[]>("gitolotl.recent", []),

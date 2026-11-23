@@ -22,6 +22,9 @@ agent. Nothing needs to be set up inside the app. Your name and email can be cha
 | **Graph** | The commit history. A dashed **WIP** row at the top appears when you have uncommitted changes. |
 | **Right panel** | The staging area (WIP selected) or the selected commit's details and files. |
 
+Drag the edge of the sidebar or the right panel to resize it, and the dividers in the graph's header to resize
+the Graph, Author and Date columns. Double-click a divider to reset it. The sizes are remembered.
+
 Almost everything has a right-click menu: commits, branches, tags, stashes, remotes, files, and the Pull
 and Push buttons.
 
