@@ -1330,12 +1330,17 @@ pub fn create_branch(repo: String, name: String, start: Option<String>, checkout
         Some("leave") => true,
         Some(other) => return Err(format!("Invalid option: {other:?}")),
     };
+    // ...unless it is that branch: "fix-1" made from origin/fix-1 is the local copy of it.
+    let same = start.as_deref().is_some_and(|s| {
+        s.split_once('/').is_some_and(|(_, b)| b == name) && run(&repo, &["show-ref", "--verify", "-q", &format!("refs/remotes/{s}")]).is_ok()
+    });
+    let track = if same { "--track" } else { "--no-track" };
     if !checkout {
-        let mut a = vec!["branch", "--no-track", name.as_str()];
+        let mut a = vec!["branch", track, name.as_str()];
         a.extend(start.as_deref());
         return run_msg(&repo, &a);
     }
-    let mut a = vec!["checkout", "--no-track", "-b", name.as_str()];
+    let mut a = vec!["checkout", track, "-b", name.as_str()];
     a.extend(start.as_deref());
 
     let dirty = !run(&repo, &["status", "--porcelain", "--untracked-files=all"])?.trim().is_empty();
@@ -1593,7 +1598,38 @@ pub fn pull(repo: String, mode: String) -> R<String> {
         "ff-only" => "--ff-only",
         _ => "--no-rebase",
     };
-    run_msg(&repo, &["pull", flag])
+    if run(&repo, &["rev-parse", "-q", "--verify", "@{upstream}"]).is_ok() {
+        return run_msg(&repo, &["pull", flag]);
+    }
+
+    // No usable upstream. git's own answer is a wall of text about tracking information;
+    // work out what the user means instead.
+    let branch = run(&repo, &["symbolic-ref", "--short", "-q", "HEAD"]).map(|s| s.trim().to_string()).unwrap_or_default();
+    if branch.is_empty() {
+        return Err("You are not on a branch, so there is nothing to pull into. Check out a branch first.".into());
+    }
+    let remotes: Vec<String> = run(&repo, &["remote"])?.lines().map(|l| l.trim().to_string()).filter(|l| !l.is_empty()).collect();
+    if remotes.is_empty() {
+        return Err("This repository has no remote to pull from.".into());
+    }
+    run_msg(&repo, &["fetch", "--all", "--prune", "--tags"])?;
+    // A branch that tracks something which is gone keeps its setting: that is not ours to rewrite.
+    if let Ok(was) = run(&repo, &["config", "--get", &format!("branch.{branch}.merge")]) {
+        let was = was.trim().trim_start_matches("refs/heads/");
+        return Err(format!("{branch} tracks \"{was}\", which no longer exists on the remote. Nothing was changed. Push to publish it again."));
+    }
+    // The same name on a remote is the same branch: pull that, and remember it.
+    let has = |r: &str| run(&repo, &["show-ref", "--verify", "-q", &format!("refs/remotes/{r}/{branch}")]).is_ok();
+    let found: Vec<&String> = remotes.iter().filter(|r| has(r)).collect();
+    let remote = match found.iter().find(|r| r.as_str() == "origin").or(found.first()) {
+        Some(r) if found.len() == 1 || r.as_str() == "origin" => r.as_str(),
+        Some(_) => return Err(format!("{branch} exists on more than one remote. Check out the one you mean from the Remote list.")),
+        None => return Ok(format!("Nothing to pull: {branch} has not been pushed yet. Push to publish it.")),
+    };
+    let up = format!("{remote}/{branch}");
+    run_msg(&repo, &["branch", &format!("--set-upstream-to={up}")])?;
+    let out = run_msg(&repo, &["pull", flag])?;
+    Ok(format!("{branch} now tracks {up}.\n{out}").trim().to_string())
 }
 
 #[tauri::command(async)]
@@ -2187,6 +2223,70 @@ mod tests {
         assert!(stashes[0].message.contains("someone else's"));
 
         let _ = std::fs::remove_dir_all(root);
+    }
+
+    /// Pull on a branch with no upstream works out what is meant instead of failing with
+    /// git's "no tracking information", and never rewrites an upstream that is already set.
+    #[test]
+    fn pull_without_upstream() {
+        let (root, repo) = temp_repo("pullup");
+        let bare = std::env::temp_dir().join(format!("gitolotl-pullup-bare-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&bare);
+        std::fs::create_dir_all(&bare).unwrap();
+        let bare_s = bare.to_string_lossy().into_owned();
+        run(&bare_s, &["init", "--bare"]).unwrap();
+        let tracks = |b: &str| run(&repo, &["config", "--get", &format!("branch.{b}.merge")]).map(|s| s.trim().to_string()).ok();
+        let tip = |r: &str| run(&repo, &["rev-parse", r]).unwrap().trim().to_string();
+        let write = |text: &str, msg: &str| {
+            std::fs::write(Path::new(&repo).join("a.txt"), text).unwrap();
+            stage_all(repo.clone()).unwrap();
+            commit(repo.clone(), msg.into(), false, false).unwrap();
+        };
+        write("base\n", "base");
+        let main = cur_branch(&repo);
+
+        // no remote at all
+        create_branch(repo.clone(), "topic".into(), None, true, None).unwrap();
+        assert!(pull(repo.clone(), "merge".into()).unwrap_err().contains("no remote"));
+        run(&repo, &["remote", "add", "origin", &bare_s]).unwrap();
+        run(&repo, &["push", "origin", &main]).unwrap();
+
+        // never pushed: nothing to pull, and that is not an error
+        let msg = pull(repo.clone(), "merge".into()).unwrap();
+        assert!(msg.contains("has not been pushed yet"), "{msg}");
+        assert_eq!(tracks("topic"), None);
+
+        // the same name on the remote, one commit ahead of us
+        run(&repo, &["push", "origin", "topic"]).unwrap();
+        create_branch(repo.clone(), "ahead".into(), None, true, None).unwrap();
+        write("newer\n", "newer");
+        run(&repo, &["push", "origin", "ahead:topic"]).unwrap();
+        checkout(repo.clone(), "topic".into(), "head".into()).unwrap();
+        let msg = pull(repo.clone(), "ff-only".into()).unwrap();
+        assert!(msg.contains("topic now tracks origin/topic"), "{msg}");
+        assert_eq!(tip("HEAD"), tip("ahead"));
+        assert_eq!(tracks("topic").as_deref(), Some("refs/heads/topic"));
+        pull(repo.clone(), "merge".into()).unwrap();
+
+        // a branch cut from a remote branch tracks it only when it is that branch
+        create_branch(repo.clone(), "feature".into(), Some("origin/topic".into()), false, None).unwrap();
+        assert_eq!(tracks("feature"), None);
+        run(&repo, &["push", "origin", "topic:same"]).unwrap();
+        create_branch(repo.clone(), "same".into(), Some("origin/same".into()), true, None).unwrap();
+        assert_eq!(tracks("same").as_deref(), Some("refs/heads/same"));
+
+        // its upstream is deleted: say so, and leave the setting alone
+        run(&repo, &["push", "origin", "--delete", "same"]).unwrap();
+        let e = pull(repo.clone(), "merge".into()).unwrap_err();
+        assert!(e.contains("no longer exists"), "{e}");
+        assert_eq!(tracks("same").as_deref(), Some("refs/heads/same"));
+
+        // detached HEAD
+        checkout(repo.clone(), tip("HEAD"), "commit".into()).unwrap();
+        assert!(pull(repo.clone(), "merge".into()).unwrap_err().contains("not on a branch"));
+
+        let _ = std::fs::remove_dir_all(root);
+        let _ = std::fs::remove_dir_all(bare);
     }
 
     /// Looking at a repository must never modify it.

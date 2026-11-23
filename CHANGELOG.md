@@ -3,6 +3,11 @@
 The section for a version becomes the "What's new" text of its release and of the in-app update prompt.
 Keep entries short and written for users.
 
+## 0.2.3
+
+- Fixed Pull failing with "There is no tracking information for the current branch" on a branch created in 0.2.2. Pull now uses the branch of the same name on the remote and remembers it; if the branch was never pushed, it says so.
+- A branch created from the remote branch of the same name (`fix-1` from `origin/fix-1`) tracks it again.
+
 ## 0.2.2
 
 - Create branch now asks where to start from (default branch first, as in GitHub Desktop) and whether to bring your uncommitted changes along or leave them behind as a stash.

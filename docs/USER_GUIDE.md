@@ -139,7 +139,8 @@ not covered.
 ## Remotes and GitHub
 
 - **Fetch** updates all remotes and prunes deleted branches.
-- **Pull** merges by default; right-click for rebase or fast-forward only.
+- **Pull** merges by default; right-click for rebase or fast-forward only. On a branch with no upstream it pulls the
+  branch of the same name from the remote and remembers it.
 - **Push** publishes the current branch, setting its upstream on first push. Right-click for **Push all
   tags** and **Force push**, which uses `--force-with-lease --force-if-includes` and is refused if someone else pushed first.
 - For repositories with a GitHub remote the sidebar lists open **pull requests** (double-click opens one
