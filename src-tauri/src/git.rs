@@ -18,6 +18,9 @@ use std::process::{Command, Stdio};
 pub type R<T> = Result<T, String>;
 
 const MAX_DIFF_BYTES: usize = 2_000_000;
+/// Diffs are always git's own: a repository's config may name an external diff program
+/// (`diff.external`), and looking at a change must never run it.
+const NO_EXT: &str = "--no-ext-diff";
 
 pub struct Out {
     pub code: i32,
@@ -120,6 +123,11 @@ fn run_msg(repo: &str, args: &[&str]) -> R<String> {
     } else {
         Err(fail(&o))
     }
+}
+
+/// Creates a file that must not exist yet (never follows a link someone left at that name).
+fn new_file(path: &Path) -> R<std::fs::File> {
+    std::fs::OpenOptions::new().write(true).create_new(true).open(path).map_err(|e| format!("Could not create a temporary file: {e}"))
 }
 
 /// Validate anything used as a ref / revision / remote name.
@@ -653,17 +661,19 @@ pub fn get_diff(
     paths_ok(std::slice::from_ref(&path))?;
     let d = dir(&repo)?;
     let o = match kind.as_str() {
-        "worktree" => exec(&d, &["diff", "--", &path], None, &[])?,
-        "staged" => exec(&d, &["diff", "--cached", "-M", "--", &path], None, &[])?,
+        "worktree" => exec(&d, &["diff", NO_EXT, "--", &path], None, &[])?,
+        "staged" => exec(&d, &["diff", NO_EXT, "--cached", "-M", "--", &path], None, &[])?,
         "untracked" => {
-            let o = exec(&d, &["diff", "--no-index", "--", "/dev/null", &path], None, &[])?;
+            // --no-index reads any file it is given, so the path must stay inside the repository.
+            inside(&repo, &path)?;
+            let o = exec(&d, &["diff", NO_EXT, "--no-index", "--", "/dev/null", &path], None, &[])?;
             // --no-index exits 1 when there are differences
             Out { code: if o.code == 1 { 0 } else { o.code }, ..o }
         }
         "commit" => {
             let h = hash.ok_or("Missing commit id")?;
             hex(&h)?;
-            let mut a = vec!["show", "--format=", "--diff-merges=first-parent", "-M", &h, "--", &path];
+            let mut a = vec!["show", NO_EXT, "--format=", "--diff-merges=first-parent", "-M", &h, "--", &path];
             if let Some(op) = &old_path {
                 paths_ok(std::slice::from_ref(op))?;
                 a.push(op);
@@ -696,12 +706,12 @@ fn cap(o: Out) -> R<DiffOut> {
 pub fn get_patch(repo: String, kind: String, hash: Option<String>) -> R<DiffOut> {
     let d = dir(&repo)?;
     let o = match kind.as_str() {
-        "worktree" => exec(&d, &["diff"], None, &[])?,
-        "staged" => exec(&d, &["diff", "--cached", "-M"], None, &[])?,
+        "worktree" => exec(&d, &["diff", NO_EXT], None, &[])?,
+        "staged" => exec(&d, &["diff", NO_EXT, "--cached", "-M"], None, &[])?,
         "commit" => {
             let h = hash.ok_or("Missing commit id")?;
             hex(&h)?;
-            exec(&d, &["show", "--format=", "--diff-merges=first-parent", "-M", &h], None, &[])?
+            exec(&d, &["show", NO_EXT, "--format=", "--diff-merges=first-parent", "-M", &h], None, &[])?
         }
         _ => return Err("Unknown patch kind".into()),
     };
@@ -856,7 +866,9 @@ fn snapshot_worktree(repo: &str, label: &str) -> R<Option<String>> {
         .unwrap_or_default();
     let tmp = std::env::temp_dir().join(format!("gitolotl-index-{}-{}", std::process::id(), now.as_nanos()));
     if index.exists() {
-        // Start from the real index so unchanged files are not re-hashed.
+        // Start from the real index so unchanged files are not re-hashed. The file is created
+        // exclusively first, so a planted file or link at that name is never written through.
+        new_file(&tmp).map_err(&refuse)?;
         std::fs::copy(&index, &tmp).map_err(|e| refuse(e.to_string()))?;
     }
     let tmp_s = tmp.to_string_lossy().into_owned();
@@ -1051,7 +1063,25 @@ fn inside(repo: &str, rel: &str) -> R<PathBuf> {
     if rel.is_empty() || !p.components().all(|c| matches!(c, Component::Normal(_))) {
         return Err("Invalid path".into());
     }
-    Ok(dir(repo)?.join(p))
+    let root = dir(repo)?;
+    let full = root.join(p);
+    // A symlinked folder on the way must not lead out of the repository either.
+    let real_root = root.canonicalize().map_err(|e| e.to_string())?;
+    let parent = full.parent().unwrap_or(&root).canonicalize().map_err(|e| e.to_string())?;
+    if !parent.starts_with(&real_root) {
+        return Err("This path leads outside the repository".into());
+    }
+    Ok(full)
+}
+
+/// Like `inside`, for a file whose contents the app itself reads or writes: a symlink is
+/// refused, because reading or writing it would act on whatever it points at.
+fn inside_file(repo: &str, rel: &str) -> R<PathBuf> {
+    let full = inside(repo, rel)?;
+    if std::fs::symlink_metadata(&full).map(|m| m.file_type().is_symlink()).unwrap_or(false) {
+        return Err("This is a symbolic link, not a text file. Resolve it with 'ours' or 'theirs'.".into());
+    }
+    Ok(full)
 }
 
 /// The working-tree text of a conflicted file, conflict markers included.
@@ -1060,7 +1090,7 @@ pub fn get_conflict(repo: String, path: String) -> R<String> {
     if !unmerged(&repo)?.contains(&path) {
         return Err("This file is not in conflict".into());
     }
-    let bytes = std::fs::read(inside(&repo, &path)?).map_err(|e| e.to_string())?;
+    let bytes = std::fs::read(inside_file(&repo, &path)?).map_err(|e| e.to_string())?;
     if bytes.len() > MAX_DIFF_BYTES || bytes.contains(&0) {
         return Err("This file is binary or too large for the merge editor. Use 'Resolve using ours / theirs' or your own editor.".into());
     }
@@ -1073,7 +1103,7 @@ pub fn resolve_with_content(repo: String, path: String, content: String) -> R<()
     if !unmerged(&repo)?.contains(&path) {
         return Err("This file is not in conflict".into());
     }
-    let file = inside(&repo, &path)?;
+    let file = inside_file(&repo, &path)?;
     snapshot_worktree(&repo, "merge-edit")?;
     std::fs::write(&file, content).map_err(|e| e.to_string())?;
     with_paths(&repo, &["add"], &[path]).map(|_| ())
@@ -1556,7 +1586,7 @@ pub fn rebase_interactive(repo: String, from: String, todo: Vec<TodoItem>) -> R<
         .map(|d| d.as_nanos())
         .unwrap_or(0);
     let file = std::env::temp_dir().join(format!("gitolotl-todo-{}-{nanos}.txt", std::process::id()));
-    std::fs::write(&file, text).map_err(|e| e.to_string())?;
+    new_file(&file)?.write_all(text.as_bytes()).map_err(|e| e.to_string())?;
     let file_s = file.to_string_lossy().replace('\\', "/");
     let has_parent = run(&repo, &["rev-parse", "--verify", "-q", &format!("{from}^")]).is_ok();
     let base = format!("{from}^");
@@ -2290,6 +2320,33 @@ mod tests {
         let _ = std::fs::remove_dir_all(bare);
         // the folder itself is gone (a removed worktree): say that, not "not on a branch"
         assert!(pull(repo.clone(), "merge".into()).unwrap_err().contains("Not a directory"));
+    }
+
+    /// Files the app reads or writes itself stay inside the repository, and its temporary
+    /// files never reuse something already at that name.
+    #[test]
+    fn app_file_access_stays_inside_the_repository() {
+        let (root, repo) = temp_repo("inside");
+        std::fs::write(Path::new(&repo).join("a.txt"), "x\n").unwrap();
+        assert!(inside(&repo, "a.txt").is_ok());
+        assert!(inside_file(&repo, "a.txt").is_ok());
+        assert!(inside(&repo, "../outside.txt").is_err());
+        assert!(inside(&repo, "sub/../a.txt").is_err());
+        assert!(inside(&repo, &std::env::temp_dir().join("x.txt").to_string_lossy()).is_err());
+        // the untracked-file diff reads the file directly, so it is held to the same rule
+        assert!(get_diff(repo.clone(), "untracked".into(), "../outside.txt".into(), None, None).is_err());
+        assert!(get_diff(repo.clone(), "untracked".into(), "a.txt".into(), None, None).is_ok());
+        #[cfg(unix)]
+        {
+            std::os::unix::fs::symlink(std::env::temp_dir(), Path::new(&repo).join("out")).unwrap();
+            assert!(inside(&repo, "out/x.txt").is_err(), "a symlinked folder must not lead out");
+            std::os::unix::fs::symlink("a.txt", Path::new(&repo).join("link")).unwrap();
+            assert!(inside_file(&repo, "link").is_err(), "a symlink is not edited as text");
+        }
+        let t = root.join("exclusive.tmp");
+        new_file(&t).unwrap();
+        assert!(new_file(&t).is_err(), "an existing file is never reused");
+        let _ = std::fs::remove_dir_all(root);
     }
 
     /// Looking at a repository must never modify it.
