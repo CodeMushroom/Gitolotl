@@ -3,6 +3,16 @@
 The section for a version becomes the "What's new" text of its release and of the in-app update prompt.
 Keep entries short and written for users.
 
+## 0.2.7
+
+Security release.
+
+- Gitolotl now asks before opening a repository whose own git settings or hooks would run programs, and runs nothing until you answer. Projects that use hooks (Husky, pre-commit) or a locally installed Git LFS will ask once. See "Trusting a repository" in the user guide.
+- Looking at a change never runs a repository's external diff program.
+- The merge editor and the untracked-file view refuse paths that lead outside the repository.
+- Updated two libraries with published security advisories.
+- Checking out a branch that is already open in another worktree now explains why it cannot be done and offers to open that worktree.
+
 ## 0.2.6
 
 - Branch and tag labels have their own column to the left of the graph, so they no longer squeeze the commit message. A branch and its remote copy on the same commit share one label; extra labels show as "+2" and open on hover.

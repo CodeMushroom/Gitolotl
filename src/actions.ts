@@ -271,8 +271,20 @@ export const A = {
       },
     });
   },
-  checkout: (target: string, kind: "head" | "remote" | "tag" | "commit") =>
-    st().act(`Checkout ${kind === "commit" ? short(target) : target}`, (r) => api.checkout(r, target, kind), true),
+  checkout: (target: string, kind: "head" | "remote" | "tag" | "commit") => {
+    // git allows a branch in one worktree at a time: offer to go to where it already is.
+    const name = kind === "remote" ? target.slice(target.indexOf("/") + 1) : target;
+    const wt = kind === "head" || kind === "remote" ? st().worktrees.find((w) => !w.current && w.branch === name) : undefined;
+    if (wt) {
+      return form({
+        title: `${name} is open in another worktree`,
+        message: `${wt.path}\n\nA branch can be checked out in only one worktree at a time, so it cannot be checked out here as well. Open that worktree to work on ${name}.`,
+        confirm: "Open that worktree",
+        onSubmit: () => st().openRepo(wt.path),
+      });
+    }
+    return void st().act(`Checkout ${kind === "commit" ? short(target) : target}`, (r) => api.checkout(r, target, kind), true);
+  },
   renameBranch: (name: string) =>
     form({
       title: `Rename ${name}`,
