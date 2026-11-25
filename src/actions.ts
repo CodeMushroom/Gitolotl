@@ -424,26 +424,66 @@ export const A = {
     });
   },
 
-  createPr: () => {
-    const { status, gh, commits, repo } = st();
+  /** Open a pull request for `from`, or ask which branch (the current one first). Any pushed branch will do. */
+  createPr: (from?: string) => {
+    const { status, gh, commits, repo, refs, remotes } = st();
     if (!gh || !repo) return void st().toast("err", "This repository has no GitHub remote.");
-    if (!status?.branch) return void st().toast("err", "Check out a branch first.");
-    if (!status.upstream) return void st().toast("err", "Push this branch before opening a pull request.");
-    const head = status.branch;
-    const subject = commits.find((c) => c.hash === status.head)?.subject ?? head;
+    const remote = remotes.find((r) => r.name === "origin")?.name ?? remotes[0]?.name;
+    // A pull request is made from a branch on GitHub, so the choices are the pushed branches.
+    const pushed = refs.filter((r) => r.kind === "remote" && r.short.startsWith(`${remote}/`) && !r.short.endsWith("/HEAD"));
+    const onRemote = (name: string) => pushed.find((r) => r.short === `${remote}/${name}`);
+    const local = (name: string) => refs.find((r) => r.kind === "head" && r.short === name);
+    const unpushed = (name: string) => { const l = local(name); return l && l.upstream === `${remote}/${name}` ? l.ahead : 0; };
+    if (from && !onRemote(from)) return void st().toast("err", `Push ${from} before opening a pull request.`);
+    const cur = status?.branch ?? null;
+    const names = pushed.map((r) => r.short.slice(remote!.length + 1));
+    if (!names.length) return void st().toast("err", "Push a branch before opening a pull request.");
+    // current branch first, then branches you have locally, then the rest
+    const rank = (n: string) => (n === cur ? 0 : local(n) ? 1 : 2);
+    names.sort((a, b) => rank(a) - rank(b));
+    const head0 = from ?? (cur && onRemote(cur) ? cur : names[0]);
+    const label = (n: string) => {
+      const u = unpushed(n);
+      return `${n}${n === cur ? " · current branch" : ""}${u ? ` · ${u} unpushed ${u === 1 ? "commit" : "commits"}` : ""}`;
+    };
+    const base0 = gh.defaultBranch ?? "main";
+    const subject = (n: string) => commits.find((c) => c.hash === onRemote(n)?.hash)?.subject ?? n;
     form({
       title: `Open pull request — ${gh.owner}/${gh.name}`,
-      message: `From ${head}`,
+      message: !from && cur && !onRemote(cur) ? `${cur} has not been pushed yet, so it is not in the list.` : undefined,
       fields: [
-        { key: "title", label: "Title", type: "text", value: subject },
+        { key: "head", label: "From branch", type: "select", value: head0, options: names.map((n) => [n, label(n)] as [string, string]) },
+        { key: "base", label: "Into (base branch)", type: "text", value: base0 },
+        { key: "title", label: "Title", type: "text", value: subject(head0) },
         { key: "body", label: "Description", type: "textarea" },
-        { key: "base", label: "Base branch", type: "text", value: gh.defaultBranch ?? "main" },
         { key: "draft", label: "Create as draft", type: "checkbox", value: false },
       ],
       confirm: "Create pull request",
+      // The suggested title follows the chosen branch until it has been edited.
+      onChange: (k, val, before) => (k === "head" && before.title === subject(s(before.head)) ? { title: subject(String(val)) } : undefined),
       onSubmit: async (v) => {
-        const pr = await api.githubCreatePr(repo.path, s(v.title), String(v.body ?? ""), head, s(v.base), !!v.draft);
-        st().toast("ok", `Opened pull request #${pr.number}`);
+        const head = s(v.head);
+        const base = s(v.base);
+        const u = unpushed(head);
+        const later = u ? ` ${u} ${u === 1 ? "commit" : "commits"} on ${head} ${u === 1 ? "is" : "are"} not pushed yet.` : "";
+        const nothing = new Error(`There is nothing to open a pull request for: ${base} already contains every commit on ${head}.${later ? `${later} Push first.` : ""}`);
+        if (head === base) throw new Error("Choose two different branches.");
+        // GitHub refuses an empty pull request with a terse message; say it plainly, before asking when we can tell.
+        const tip = onRemote(head)?.hash;
+        const baseTip = onRemote(base)?.hash;
+        if (tip && baseTip && commits.some((c) => c.hash === baseTip)) {
+          const parents = new Map(commits.map((c) => [c.hash, c.parents]));
+          const seen = new Set<string>();
+          for (const todo = [baseTip]; todo.length; ) {
+            const h = todo.pop()!;
+            if (!seen.has(h)) { seen.add(h); todo.push(...(parents.get(h) ?? [])); }
+          }
+          if (seen.has(tip)) throw nothing;
+        }
+        const pr = await api.githubCreatePr(repo.path, s(v.title), String(v.body ?? ""), head, base, !!v.draft).catch((e) => {
+          throw String(e).includes("No commits between") ? nothing : e;
+        });
+        st().toast("ok", `Opened pull request #${pr.number}${later ? `\n${later.trim()} Push to add ${u === 1 ? "it" : "them"}.` : ""}`);
         void st().loadGithub(false);
         openExternal(pr.url);
       },
@@ -501,6 +541,7 @@ export const refMenu = (e: React.MouseEvent, r: RefInfo) => {
     }
     items.push({ label: "Create branch here…", onClick: () => A.newBranch(r.short) });
     if (r.kind === "head") items.push({ label: "Rename…", onClick: () => A.renameBranch(r.short) });
+    if (st().gh) items.push({ label: "Open pull request…", onClick: () => A.createPr(r.kind === "remote" ? r.short.slice(r.short.indexOf("/") + 1) : r.short) });
     items.push({ sep: true }, { label: "Delete…", danger: true, disabled: r.isHead, onClick: () => A.deleteBranch(r) });
   }
   items.push({ sep: true }, { label: "Copy name", onClick: () => copy(r.short) });

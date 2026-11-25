@@ -52,7 +52,11 @@ export function layoutGraph(commits: Commit[]): GraphLayout {
 
     const outs: Edge[] = [];
     c.parents.forEach((p, idx) => {
-      let j = lanes.indexOf(p);
+      // A commit's own line (to its first parent) keeps its lane and colour all the way down to
+      // that parent, even when another line is already heading there. The lines then meet at
+      // the parent's node, so where a branch started is a commit you can see, not a point
+      // somewhere along a neighbour's line. A merged-in parent joins a line already going there.
+      let j = idx === 0 ? -1 : lanes.indexOf(p);
       if (j === -1) {
         if (idx === 0) {
           j = col;

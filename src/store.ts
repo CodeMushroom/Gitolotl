@@ -18,6 +18,8 @@ export interface FormModal {
   kind: "form"; title: string; message?: string; fields?: Field[]; confirm?: string; danger?: boolean;
   /** an optional second way forward, shown next to Cancel */
   alt?: { label: string; onClick: () => void };
+  /** called when a field changes (with the values before the change); may return other fields to set */
+  onChange?: (key: string, value: string | boolean, before: Values) => Partial<Values> | void;
   onSubmit: (v: Values) => void | Promise<void>;
 }
 export type Modal = FormModal | { kind: "irebase"; from: string } | { kind: "worktrees" } | null;

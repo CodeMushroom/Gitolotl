@@ -3,6 +3,12 @@
 The section for a version becomes the "What's new" text of its release and of the in-app update prompt.
 Keep entries short and written for users.
 
+## 0.2.5
+
+- The graph now shows where a branch started: its line runs down to the commit it was cut from instead of folding into a neighbouring line.
+- Open pull request lets you pick any pushed branch, not only the one checked out. You can also right-click a branch and choose "Open pull request…".
+- An empty pull request is explained in plain words instead of "422 Validation Failed", and branches with unpushed commits are marked.
+
 ## 0.2.4
 
 - The sidebar and the right panel can be resized: drag their edge.

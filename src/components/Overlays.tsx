@@ -10,7 +10,7 @@ function Form({ m }: { m: FormModal }) {
   const [v, setV] = useState<Values>(() => Object.fromEntries((m.fields ?? []).map((f) => [f.key, f.value ?? (f.type === "checkbox" ? false : "")])));
   const [err, setErr] = useState("");
   const [working, setWorking] = useState(false);
-  const upd = (k: string, val: string | boolean) => setV((o) => ({ ...o, [k]: val }));
+  const upd = (k: string, val: string | boolean) => setV((o) => ({ ...o, [k]: val, ...m.onChange?.(k, val, o) }));
   const submit = async () => {
     if (working) return;
     setWorking(true);

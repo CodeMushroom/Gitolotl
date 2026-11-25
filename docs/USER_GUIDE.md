@@ -147,7 +147,8 @@ not covered.
 - **Push** publishes the current branch, setting its upstream on first push. Right-click for **Push all
   tags** and **Force push**, which uses `--force-with-lease --force-if-includes` and is refused if someone else pushed first.
 - For repositories with a GitHub remote the sidebar lists open **pull requests** (double-click opens one
-  in the browser) and the **PR** button opens a new one from the current branch.
+  in the browser) and the **PR** button opens a new one from any pushed branch (the current one is offered first). Right-clicking
+  a branch and choosing **Open pull request…** does the same for that branch.
 
 GitHub access uses the token already stored by your git credential helper. If the sidebar shows
 **Connect GitHub account**, click it to let the helper sign you in. Gitolotl never stores the token.
