@@ -47,9 +47,9 @@ function Form({ m }: { m: FormModal }) {
       ))}
       {err && <div className="form-err">{err}</div>}
       <div className="modal-btns">
-        <button type="button" className="btn" onClick={() => st().set({ modal: null })}>Cancel</button>
+        <button type="button" className="btn" autoFocus={m.cautious} onClick={() => st().set({ modal: null })}>Cancel</button>
         {m.alt && <button type="button" className="btn" onClick={m.alt.onClick}>{m.alt.label}</button>}
-        <button type="submit" className={`btn ${m.danger ? "danger" : "primary"}`} disabled={working} autoFocus={!m.fields?.some((f) => f.type === "text")}>{working ? "Working…" : m.confirm ?? "OK"}</button>
+        <button type="submit" className={`btn ${m.danger ? "danger" : "primary"}`} disabled={working} autoFocus={!m.cautious && !m.fields?.some((f) => f.type === "text")}>{working ? "Working…" : m.confirm ?? "OK"}</button>
       </div>
     </form>
   );

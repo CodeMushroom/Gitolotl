@@ -179,6 +179,106 @@ pub fn repo_open(path: String) -> R<RepoInfo> {
     Ok(info(&top))
 }
 
+// ───────────────────────── trust ─────────────────────────
+//
+// git lets a repository's own settings name programs to run: a file-watcher hook, content
+// filters, a credential helper, an ssh command, hooks. A clone never copies those, but a
+// folder that arrives with its .git directory (an archive, a shared drive) can carry them,
+// and merely looking at such a repository would run them. So before anything else is run,
+// the settings are read (reading runs nothing) and the user is asked once.
+
+#[derive(Serialize, Debug, PartialEq)]
+pub struct Risk {
+    /// the setting ("core.fsmonitor") or "hook"
+    what: String,
+    /// its value, or the hook's name
+    value: String,
+    /// what it does, in plain words
+    why: String,
+}
+
+#[derive(Serialize)]
+pub struct RepoRisks {
+    items: Vec<Risk>,
+    /// changes whenever the list does, so a new setting is asked about again
+    fingerprint: String,
+}
+
+/// Why a setting found in the repository's own config deserves a question, if it does.
+fn risky(key: &str, value: &str) -> Option<&'static str> {
+    let k = key.to_ascii_lowercase();
+    let first = k.split('.').next().unwrap_or("");
+    let last = k.rsplit('.').next().unwrap_or("");
+    let v = value.trim().to_ascii_lowercase();
+    let is_bool = matches!(v.as_str(), "" | "true" | "false" | "yes" | "no" | "on" | "off" | "1" | "0");
+    Some(match (first, last) {
+        ("core", "fsmonitor") if !is_bool => "runs this program every time the repository is looked at",
+        ("core", "sshcommand" | "gitproxy" | "askpass" | "alternaterefscommand") => "runs this program when talking to a remote",
+        ("core", "hookspath") => "runs the scripts in this folder on commit, checkout, push and more",
+        ("credential", "helper") => "runs this program whenever a password or token is needed",
+        ("diff", "external" | "textconv" | "command") => "runs this program when changes are shown",
+        ("filter", "clean" | "smudge" | "process") => "runs this program on files as they are staged or checked out",
+        ("merge", "driver") => "runs this program during merges",
+        ("gpg", "program" | "defaultkeycommand") => "runs this program when commits are signed or verified",
+        ("remote", "uploadpack" | "receivepack" | "vcs") => "runs this program on fetch or push",
+        ("submodule", "update") if v.starts_with('!') => "runs this command when submodules are updated",
+        ("include" | "includeif", "path") => "loads more settings from this file",
+        ("http", "proxy") => "sends your connections through this proxy",
+        ("http", "sslverify") if matches!(v.as_str(), "false" | "no" | "off" | "0") => "turns off checking the server's certificate",
+        ("http", "sslcainfo" | "sslcapath") => "replaces the certificates used to check servers",
+        _ => return None,
+    })
+}
+
+/// What this repository's own settings and hooks would run. Runs nothing itself: it only
+/// reads the config and lists the hooks folder.
+#[tauri::command(async)]
+pub fn repo_risks(repo: String) -> R<RepoRisks> {
+    let mut items: Vec<Risk> = vec![];
+    // --local is the repository's own file; --worktree is the per-worktree one, when in use.
+    for scope in ["--local", "--worktree"] {
+        let out = match run(&repo, &["config", scope, "--includes", "--list", "-z"]) {
+            Ok(o) => o,
+            Err(e) if scope == "--local" => return Err(e),
+            Err(_) => continue,
+        };
+        for entry in out.split('\0').filter(|e| !e.is_empty()) {
+            let (key, value) = entry.split_once('\n').unwrap_or((entry, ""));
+            if let Some(why) = risky(key, value) {
+                let r = Risk { what: key.to_string(), value: value.to_string(), why: why.to_string() };
+                if !items.contains(&r) {
+                    items.push(r);
+                }
+            }
+        }
+    }
+    // Hooks: anything in the hooks folder that is not one of git's ".sample" files.
+    if let Ok(h) = run(&repo, &["rev-parse", "--git-path", "hooks"]) {
+        let hooks = dir(&repo)?.join(h.trim());
+        let mut names: Vec<String> = std::fs::read_dir(&hooks)
+            .map(|d| {
+                d.filter_map(|e| e.ok())
+                    .filter(|e| e.path().is_file())
+                    .map(|e| e.file_name().to_string_lossy().into_owned())
+                    .filter(|n| !n.ends_with(".sample"))
+                    .collect()
+            })
+            .unwrap_or_default();
+        names.sort();
+        for n in names {
+            items.push(Risk { what: "hook".into(), value: n, why: "a script git runs at that moment (commit, checkout, push...)".into() });
+        }
+    }
+    // FNV-1a: stable across versions and platforms, which std's hasher does not promise.
+    let mut hash: u64 = 0xcbf2_9ce4_8422_2325;
+    for r in &items {
+        for b in r.what.bytes().chain([0]).chain(r.value.bytes()).chain([0]) {
+            hash = (hash ^ b as u64).wrapping_mul(0x0000_0100_0000_01b3);
+        }
+    }
+    Ok(RepoRisks { fingerprint: format!("{hash:016x}"), items })
+}
+
 #[tauri::command(async)]
 pub fn repo_init(path: String) -> R<RepoInfo> {
     run(&path, &["init"])?;
@@ -2320,6 +2420,45 @@ mod tests {
         let _ = std::fs::remove_dir_all(bare);
         // the folder itself is gone (a removed worktree): say that, not "not on a branch"
         assert!(pull(repo.clone(), "merge".into()).unwrap_err().contains("Not a directory"));
+    }
+
+    /// Settings and hooks that make git run programs are found, by a scan that runs nothing.
+    #[test]
+    fn finds_settings_that_run_programs() {
+        let (root, repo) = temp_repo("trust");
+        let clean = repo_risks(repo.clone()).unwrap();
+        assert!(clean.items.is_empty(), "{:?}", clean.items);
+
+        // If git ran this, the marker file would appear.
+        let marker = root.join("ran.marker");
+        let cmd = format!("echo ran > '{}'", marker.to_string_lossy().replace('\\', "/"));
+        run(&repo, &["config", "core.fsmonitor", &cmd]).unwrap();
+        run(&repo, &["config", "filter.sneaky.clean", "sneaky-filter"]).unwrap();
+        run(&repo, &["config", "credential.helper", "!evil"]).unwrap();
+        run(&repo, &["config", "http.sslVerify", "false"]).unwrap();
+        run(&repo, &["config", "core.autocrlf", "false"]).unwrap();
+        let hooks = Path::new(&repo).join(".git").join("hooks");
+        std::fs::create_dir_all(&hooks).unwrap();
+        std::fs::write(hooks.join("pre-commit"), "#!/bin/sh\n").unwrap();
+        std::fs::write(hooks.join("pre-push.sample"), "#!/bin/sh\n").unwrap();
+
+        repo_open(repo.clone()).unwrap();
+        let found = repo_risks(repo.clone()).unwrap();
+        let what: Vec<&str> = found.items.iter().map(|r| r.what.as_str()).collect();
+        assert_eq!(what, ["core.fsmonitor", "filter.sneaky.clean", "credential.helper", "http.sslverify", "hook"], "{:?}", found.items);
+        assert_eq!(found.items[4].value, "pre-commit", "sample hooks are ignored");
+        assert_ne!(found.fingerprint, clean.fingerprint);
+        assert!(!marker.exists(), "opening and scanning must not run the repository's programs");
+
+        // the built-in watcher (a plain on/off) and verified TLS are not worth a question
+        run(&repo, &["config", "core.fsmonitor", "true"]).unwrap();
+        run(&repo, &["config", "http.sslVerify", "true"]).unwrap();
+        let later = repo_risks(repo.clone()).unwrap();
+        assert!(!later.items.iter().any(|r| r.what == "core.fsmonitor" || r.what == "http.sslverify"));
+        assert_ne!(later.fingerprint, found.fingerprint, "a changed list is asked about again");
+        // leave no watcher daemon behind
+        run(&repo, &["config", "core.fsmonitor", "false"]).unwrap();
+        let _ = std::fs::remove_dir_all(root);
     }
 
     /// Files the app reads or writes itself stay inside the repository, and its temporary

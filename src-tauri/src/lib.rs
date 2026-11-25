@@ -48,6 +48,7 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             initial_repo,
             git::repo_open,
+            git::repo_risks,
             git::repo_init,
             git::repo_clone,
             git::get_status,

@@ -17,6 +17,8 @@ export interface RefInfo {
   name: string; short: string; kind: "head" | "remote" | "tag"; hash: string;
   upstream: string | null; ahead: number; behind: number; gone: boolean; isHead: boolean;
 }
+export interface Risk { what: string; value: string; why: string }
+export interface RepoRisks { items: Risk[]; fingerprint: string }
 export interface Remote { name: string; url: string }
 export interface Stash { index: number; hash: string; time: number; message: string }
 export interface ChangedFile { status: string; path: string; oldPath: string | null }
@@ -36,6 +38,7 @@ const call = <T>(cmd: string, args?: Record<string, unknown>) => invoke<T>(cmd, 
 
 export const api = {
   repoOpen: (path: string) => call<RepoInfo>("repo_open", { path }),
+  repoRisks: (repo: string) => call<RepoRisks>("repo_risks", { repo }),
   repoInit: (path: string) => call<RepoInfo>("repo_init", { path }),
   repoClone: (url: string, parent: string, name: string) => call<RepoInfo>("repo_clone", { url, parent, name }),
   status: (repo: string) => call<Status>("get_status", { repo }),

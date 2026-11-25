@@ -16,6 +16,8 @@ export interface Field {
 export type Values = Record<string, string | boolean>;
 export interface FormModal {
   kind: "form"; title: string; message?: string; fields?: Field[]; confirm?: string; danger?: boolean;
+  /** Enter must not confirm: Cancel gets the focus instead of the confirm button */
+  cautious?: boolean;
   /** an optional second way forward, shown next to Cancel */
   alt?: { label: string; onClick: () => void };
   /** called when a field changes (with the values before the change); may return other fields to set */
@@ -179,6 +181,8 @@ export const useStore = create<State>((set, get) => ({
   },
 
   adoptRepo: async (info) => {
+    // Nothing else is run in a repository until its own settings have been looked at.
+    if (!(await trusted(info))) return;
     const tabs = get().tabs.some((t) => t.path === info.path) ? get().tabs : [...get().tabs, info];
     const recent = [info, ...get().recent.filter((r) => r.path !== info.path)].slice(0, 12);
     save("gitolotl.tabs", tabs);
@@ -321,4 +325,49 @@ function lost(path: string, e: unknown): boolean {
   s.toast("err", `${path} no longer exists, so its tab was closed.\nIt may have been a worktree that was removed, or the folder was moved or deleted.`);
   s.closeTab(path);
   return true;
+}
+
+/**
+ * A repository's own settings can make git run programs (hooks, filters, a credential helper...).
+ * If this one's do, ask before anything else is run in it. The answer is remembered until the
+ * list of such settings changes.
+ */
+async function trusted(info: RepoInfo): Promise<boolean> {
+  const s = useStore.getState();
+  let lines: string[];
+  let remember: (() => void) | null = null;
+  try {
+    const risks = await api.repoRisks(info.path);
+    const known = load<Record<string, string>>("gitolotl.trusted", {});
+    if (!risks.items.length || known[info.path] === risks.fingerprint) return true;
+    const cut = (v: string) => (v.length > 90 ? `${v.slice(0, 90)}…` : v);
+    lines = risks.items.slice(0, 12).map((r) => (r.what === "hook" ? `• Hook "${cut(r.value)}": ${r.why}` : `• ${r.what} = ${cut(r.value)}\n   ${r.why}`));
+    if (risks.items.length > 12) lines.push(`…and ${risks.items.length - 12} more`);
+    remember = () => save("gitolotl.trusted", { ...load<Record<string, string>>("gitolotl.trusted", {}), [info.path]: risks.fingerprint });
+  } catch (e) {
+    lines = [`Gitolotl could not read this repository's settings to check them:\n${String(e)}`];
+  }
+  return new Promise<boolean>((resolve) => {
+    let answered = false;
+    const modal: FormModal = {
+      kind: "form",
+      title: `Trust ${info.name}?`,
+      message:
+        `${info.path}\n\nThis repository's own settings make git run programs or change how it connects. ` +
+        "That is normal for some projects (hooks, Git LFS), but a folder from someone you do not trust could use it to run anything on this computer.\n\n" +
+        lines.join("\n") +
+        "\n\nNothing has been run yet.",
+      confirm: "Trust and open",
+      danger: true,
+      cautious: true,
+      onSubmit: () => { answered = true; remember?.(); resolve(true); },
+    };
+    s.set({ modal });
+    // Closing the dialog any other way is a no.
+    const stop = useStore.subscribe((now) => {
+      if (now.modal === modal) return;
+      stop();
+      if (!answered) resolve(false);
+    });
+  });
 }

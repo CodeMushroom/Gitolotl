@@ -139,6 +139,17 @@ sidebar, labelled with the action and time. Click one to see its contents; right
 changes**, **create a branch** from it, or delete it. See [Safety](SAFETY.md) for exactly what is and is
 not covered.
 
+## Trusting a repository
+
+Git lets a repository's own settings name programs to run: hooks, content filters, a credential helper,
+a file watcher. Cloning never copies those, but a folder that arrives with its `.git` directory (an
+archive, a shared drive) can carry them, and git would run them as soon as the repository is looked at.
+
+Before Gitolotl runs anything in a repository it reads those settings. If any of them would run a program
+or change how git connects, it lists them and asks **Trust and open**. Nothing is run until you answer.
+The answer is remembered on this computer until that list changes. Projects that use hooks (Husky,
+pre-commit) or a locally installed Git LFS will ask once; that is expected.
+
 ## Remotes and GitHub
 
 - **Fetch** updates all remotes and prunes deleted branches.
