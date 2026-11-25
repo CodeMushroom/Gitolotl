@@ -3,9 +3,9 @@ name: release
 # Push a tag like v0.2.0 to build signed installers for Windows, macOS and Linux and
 # publish them, with latest.json for the in-app updater, as a Release on this repository.
 #
-# The release is created as a DRAFT, every platform uploads into it, and only then is
-# it published. Installed apps read "latest", so they never see a half-finished release
-# whose update manifest is missing their platform.
+# The release is created as a DRAFT, every platform uploads into it, and only then is the
+# update manifest written and the release published. Installed apps read "latest", so they
+# never see a half-finished release whose update manifest is missing their platform.
 on:
   push:
     tags: ["v*"]
@@ -137,13 +137,11 @@ jobs:
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         with:
           releaseId: ${{ needs.create.outputs.id }}
-          # Still needed: download links in latest.json are written for this tag, not the draft.
           tagName: ${{ github.ref_name }}
-          # Shown by the in-app update prompt.
-          releaseBody: ${{ needs.create.outputs.notes }}
           assetNamePattern: ${{ matrix.asset }}
-          # Windows installs from the setup.exe update through the setup.exe.
-          updaterJsonPreferNsis: true
+          # The update manifest is written once, by the publish job. Four jobs each
+          # rewriting the same latest.json overwrote one another's platforms.
+          includeUpdaterJson: false
           args: ${{ matrix.args }}
 
   publish:
@@ -154,17 +152,16 @@ jobs:
     permissions:
       contents: write
     steps:
-      - name: Check the update manifest covers every platform
+      - uses: actions/checkout@v4
+      # Fails, leaving the draft hidden, unless every platform's package and signature is there.
+      - name: Write the update manifest from the signed packages
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # Shown by the in-app update prompt.
+          NOTES: ${{ needs.create.outputs.notes }}
         run: |
-          api="https://api.github.com/repos/$RELEASES_REPO/releases/${{ needs.create.outputs.id }}"
-          asset=$(curl -sS --fail-with-body -H "Authorization: Bearer $GH_TOKEN" "$api/assets?per_page=100" | jq -r '.[] | select(.name == "latest.json") | .url')
-          curl -sS --fail-with-body -L -H "Authorization: Bearer $GH_TOKEN" -H "Accept: application/octet-stream" "$asset" > latest.json
-          jq -r '.platforms | keys | join(", ")' latest.json
-          for p in windows-x86_64 windows-x86_64-nsis darwin-aarch64 darwin-x86_64 linux-x86_64; do
-            jq -e --arg p "$p" '.platforms[$p].signature | length > 0' latest.json > /dev/null || { echo "latest.json has no entry for $p" >&2; exit 1; }
-          done
+          node scripts/make-manifest.mjs "$RELEASES_REPO" "${{ needs.create.outputs.id }}" "${{ needs.create.outputs.version }}" "$GITHUB_REF_NAME" --upload \
+            | jq -r '.platforms | keys | join(", ")'
       - name: Publish the release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}

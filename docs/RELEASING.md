@@ -9,8 +9,9 @@ installed copy downloads from its Releases, so no server or storage bucket is ne
 
 1. A version tag (`v0.2.0`) is pushed.
 2. `.github/workflows/release.yml` builds on Windows, macOS (Apple silicon and Intel) and Linux.
-3. Each build is signed with the **update-signing key** and uploaded to a draft Release, together with
-   a `latest.json` manifest listing every platform's download URL and signature.
+3. Each build is signed with the **update-signing key** and uploaded to a draft Release. When all of
+   them are there, `scripts/make-manifest.mjs` writes `latest.json`, the manifest listing every
+   platform's download URL and signature.
 4. Installed copies of Gitolotl fetch
    `https://github.com/CodeMushroom/Gitolotl/releases/latest/download/latest.json` on launch. If the
    version is newer they offer **Install and restart**, download the package, verify its signature
@@ -77,9 +78,11 @@ git push origin main v0.2.0
 ```
 
 3. Watch the **release** workflow. It refuses to run if the tag does not match the app
-   version. It creates the release as a **draft**, lets every platform upload into it, checks the update
-   manifest lists all platforms, and only then publishes. If one platform fails, the draft stays hidden
-   and existing users keep seeing the previous version: re-run the failed job, then the `publish` job.
+   version. It creates the release as a **draft**, lets every platform upload into it, writes the update
+   manifest from the signed packages (failing if any platform is missing), and only then publishes. If
+   one platform fails, the draft stays hidden and existing users keep seeing the previous version:
+   re-run the failed jobs and `publish` runs again after them. A new package file also needs a line in
+   the table at the top of `scripts/make-manifest.mjs`.
 4. The release description is generated: your changelog section, then a plain-language download table
    with one link per platform. Download files are named by the `asset` pattern of each matrix entry in
    `release.yml` (for example `Gitolotl-0.2.0-Windows-setup.exe`). The text of the release body is what users see in the update
