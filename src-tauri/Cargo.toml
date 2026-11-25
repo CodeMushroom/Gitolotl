@@ -1,6 +1,6 @@
 [package]
 name = "gitolotl"
-version = "0.2.7"
+version = "0.2.8"
 description = "Gitolotl - a friendly, secure Git client by CodeMushroom"
 authors = ["CodeMushroom"]
 license = "Apache-2.0"

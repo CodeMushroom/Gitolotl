@@ -24,7 +24,9 @@ export interface FormModal {
   onChange?: (key: string, value: string | boolean, before: Values) => Partial<Values> | void;
   onSubmit: (v: Values) => void | Promise<void>;
 }
-export type Modal = FormModal | { kind: "irebase"; from: string } | { kind: "worktrees" } | null;
+export type Modal = FormModal | { kind: "irebase"; from: string } | { kind: "worktrees" } | { kind: "cleanup" } | null;
+/** Which branches the graph and the sidebar show. "mine": those whose newest commit is the user's. */
+export type Scope = "all" | "mine" | "current";
 export interface MenuItem { label?: string; onClick?: () => void; danger?: boolean; sep?: boolean; disabled?: boolean }
 export interface Menu { x: number; y: number; items: MenuItem[] }
 
@@ -79,7 +81,8 @@ interface State {
   openFile: OpenFile | null;
   scrollTo: string | null;
   limit: number;
-  showAll: boolean;
+  scope: Scope;
+  setScope: (scope: Scope) => void;
   search: string;
   busy: string | null;
   toasts: Toast[];
@@ -158,7 +161,12 @@ export const useStore = create<State>((set, get) => ({
   openFile: null,
   scrollTo: null,
   limit: 3000,
-  showAll: true,
+  scope: load<Scope>("gitolotl.scope", "all"),
+  setScope: (scope) => {
+    save("gitolotl.scope", scope);
+    set({ scope });
+    void get().refresh();
+  },
   search: "",
   busy: null,
   toasts: [],
@@ -216,9 +224,9 @@ export const useStore = create<State>((set, get) => ({
     const repo = get().repo?.path;
     if (!repo) return;
     try {
-      const { limit, showAll } = get();
+      const { limit, scope } = get();
       const [status, commits, refs, remotes, stashes, worktrees, backups, defaultBranch] = await Promise.all([
-        api.status(repo), api.log(repo, limit, showAll), api.refs(repo), api.remotes(repo), api.stashes(repo),
+        api.status(repo), api.log(repo, limit, scope !== "current", undefined, scope === "mine"), api.refs(repo), api.remotes(repo), api.stashes(repo),
         api.worktrees(repo).catch(() => []),
         api.backups(repo).catch(() => []),
         api.defaultBranch(repo).catch(() => null),

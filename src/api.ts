@@ -16,6 +16,10 @@ export interface Worktree { path: string; head: string; branch: string | null; c
 export interface RefInfo {
   name: string; short: string; kind: "head" | "remote" | "tag"; hash: string;
   upstream: string | null; ahead: number; behind: number; gone: boolean; isHead: boolean;
+  /** its newest commit was written by the user */
+  mine: boolean;
+  /** when its newest commit was made (unix seconds) */
+  time: number;
 }
 export interface Risk { what: string; value: string; why: string }
 export interface RepoRisks { items: Risk[]; fingerprint: string }
@@ -42,7 +46,7 @@ export const api = {
   repoInit: (path: string) => call<RepoInfo>("repo_init", { path }),
   repoClone: (url: string, parent: string, name: string) => call<RepoInfo>("repo_clone", { url, parent, name }),
   status: (repo: string) => call<Status>("get_status", { repo }),
-  log: (repo: string, limit: number, all: boolean, path?: string) => call<Commit[]>("get_log", { repo, limit, all, path }),
+  log: (repo: string, limit: number, all: boolean, path?: string, mine = false) => call<Commit[]>("get_log", { repo, limit, all, path, mine }),
   refs: (repo: string) => call<RefInfo[]>("get_refs", { repo }),
   remotes: (repo: string) => call<Remote[]>("get_remotes", { repo }),
   stashes: (repo: string) => call<Stash[]>("get_stashes", { repo }),
@@ -73,6 +77,7 @@ export const api = {
   checkout: (repo: string, target: string, kind: string) => call<string>("checkout", { repo, target, kind }),
   createBranch: (repo: string, name: string, start: string | undefined, checkout: boolean, changes?: "bring" | "leave") => call<string>("create_branch", { repo, name, start, checkout, changes }),
   defaultBranch: (repo: string) => call<string | null>("default_branch", { repo }),
+  mergedBranches: (repo: string, into: string) => call<string[]>("merged_branches", { repo, into }),
   deleteBranch: (repo: string, name: string, force: boolean) => call<string>("delete_branch", { repo, name, force }),
   renameBranch: (repo: string, old: string, newName: string) => call<string>("rename_branch", { repo, old, new: newName }),
   deleteRemoteBranch: (repo: string, remote: string, name: string) => call<string>("delete_remote_branch", { repo, remote, name }),
@@ -95,7 +100,7 @@ export const api = {
   addRemote: (repo: string, name: string, url: string) => call<string>("add_remote", { repo, name, url }),
   removeRemote: (repo: string, name: string) => call<string>("remove_remote", { repo, name }),
   stashPush: (repo: string, message: string, includeUntracked: boolean) => call<string>("stash_push", { repo, message, includeUntracked }),
-  stashOp: (repo: string, op: "apply" | "pop" | "drop", index: number) => call<string>("stash_op", { repo, op, index }),
+  stashOp: (repo: string, op: "apply" | "pop" | "drop", index: number, hash?: string) => call<string>("stash_op", { repo, op, index, hash }),
   identity: (repo: string) => call<Identity>("get_identity", { repo }),
   setIdentity: (repo: string, name: string, email: string, global: boolean) => call<void>("set_identity", { repo, name, email, global }),
   githubInfo: (repo: string, interactive: boolean) => call<GithubInfo>("github_info", { repo, interactive }),

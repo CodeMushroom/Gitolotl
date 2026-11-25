@@ -4,6 +4,7 @@ import { api } from "../api";
 import type { TodoCommit } from "../api";
 import { st, useStore } from "../store";
 import type { FormModal, Values } from "../store";
+import { Cleanup } from "./Cleanup";
 import { Worktrees } from "./Worktrees";
 
 function Form({ m }: { m: FormModal }) {
@@ -120,7 +121,7 @@ export function ModalHost() {
   if (!modal) return null;
   return (
     <div className="backdrop" onMouseDown={() => st().set({ modal: null })}>
-      {modal.kind === "form" ? <Form key={modal.title} m={modal} /> : modal.kind === "worktrees" ? <Worktrees /> : <InteractiveRebase from={modal.from} />}
+      {modal.kind === "form" ? <Form key={modal.title} m={modal} /> : modal.kind === "worktrees" ? <Worktrees /> : modal.kind === "cleanup" ? <Cleanup /> : <InteractiveRebase from={modal.from} />}
     </div>
   );
 }

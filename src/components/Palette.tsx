@@ -58,6 +58,7 @@ export function Palette() {
       { kind: "AI", label: st().aiOnly ? "Show all commits" : "Show only AI-assisted commits", run: () => st().set({ aiOnly: !st().aiOnly }) },
       { kind: "Action", label: "Undo last destructive action", hint: "Ctrl+Z", run: () => A.undo() },
       { kind: "View", label: "Worktree dashboard", hint: "see every checkout and agent", run: () => A.worktrees() },
+      { kind: "Action", label: "Clean up old branches, stashes and worktrees", hint: "you choose what goes", run: () => A.cleanup() },
       { kind: "View", label: "Go to uncommitted changes", run: () => st().select({ type: "wip" }) },
       { kind: "View", label: "Refresh", run: () => void st().refresh() },
       { kind: "App", label: "Open repository…", run: () => void A.openDialog() },

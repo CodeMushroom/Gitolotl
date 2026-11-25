@@ -1,6 +1,7 @@
 import type React from "react";
 import { A, pullMenu, pushMenu } from "../actions";
 import { st, useStore } from "../store";
+import type { Scope } from "../store";
 import { Icon } from "./Icon";
 
 export function Tabs() {
@@ -28,7 +29,7 @@ export function Toolbar() {
   const status = useStore((s) => s.status);
   const busy = useStore((s) => s.busy);
   const search = useStore((s) => s.search);
-  const showAll = useStore((s) => s.showAll);
+  const scope = useStore((s) => s.scope);
   const stashes = useStore((s) => s.stashes);
   const gh = useStore((s) => s.gh);
   const aiOnly = useStore((s) => s.aiOnly);
@@ -66,9 +67,16 @@ export function Toolbar() {
       <label className="toggle" title="Show only commits written or co-authored by an AI agent">
         <input type="checkbox" checked={aiOnly} onChange={(e) => st().set({ aiOnly: e.target.checked })} /> ✦ AI only
       </label>
-      <label className="toggle" title="Show all branches, or only the current one">
-        <input type="checkbox" checked={showAll} onChange={(e) => { st().set({ showAll: e.target.checked }); void st().refresh(); }} /> All branches
-      </label>
+      <select
+        className="scope"
+        value={scope}
+        title={"Which branches the graph and the sidebar show.\nMy branches: those whose latest commit is yours, plus the one you are on."}
+        onChange={(e) => st().setScope(e.target.value as Scope)}
+      >
+        <option value="all">All branches</option>
+        <option value="mine">My branches</option>
+        <option value="current">Current branch</option>
+      </select>
       <input className="search" placeholder="Search commits (message, author, hash)…" value={search} onChange={(e) => st().set({ search: e.target.value })} />
       <button className="iconbtn" title="Refresh (F5)" onClick={() => st().refresh()}><Icon name="fetch" size={16} /></button>
       <button className="iconbtn" title="Settings" onClick={() => A.settings()}><Icon name="settings" size={16} /></button>

@@ -110,6 +110,24 @@ message, author or hash).
 - **Stash** stores your changes (untracked files included by default); right-click a stash to apply, pop
   or drop it.
 - **Tags** can be lightweight or annotated (give a message). Right-click to push or delete.
+- **My branches**: the picker in the toolbar switches the graph and the sidebar between all branches,
+  only yours, and only the current one. A branch is yours when its latest commit was written by you
+  (the name or email git is set up with). The primary branches and the one you are on always stay.
+
+### Clean up
+
+The broom in the sidebar's Local header (or "Clean up" in the command palette) lists what looks finished
+with. Nothing is removed unless you tick it.
+
+- **Branches** whose remote branch was deleted, or that were pushed and are fully merged into the
+  default branch, are ticked for you. Branches with no commits for six months, and unpushed branches
+  with no commits of their own, are listed but not ticked.
+- **Worktrees** are listed when their folder is gone, or when they hold nothing uncommitted and their
+  branch is one of the above. The folder is deleted from disk together with any ignored files in it.
+- **Stashes** older than three months are listed, never ticked for you.
+
+The current branch, the primary branches and the repository's own folder are never offered. Deleted
+branches and dropped stashes are kept as safety snapshots, so each can be restored.
 
 ### Interactive rebase
 

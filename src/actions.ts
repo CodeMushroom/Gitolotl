@@ -198,6 +198,7 @@ export const A = {
       onSubmit: async () => { st().setOpenFile(null); await st().act(`Undo ${describe(b)}`, (r) => api.restoreBackup(r, b.name)); },
     }),
   worktrees: () => st().set({ modal: { kind: "worktrees" } }),
+  cleanup: () => st().set({ modal: { kind: "cleanup" } }),
 
   /** With `start` the starting point is fixed ("Create branch here"); without, the dialog asks. */
   newBranch: async (start?: string) => {
@@ -371,8 +372,8 @@ export const A = {
       confirm: "Stash",
       onSubmit: async (v) => { await st().act("Stash", (r) => api.stashPush(r, s(v.message), !!v.untracked), true); },
     }),
-  stashOp: (op: "apply" | "pop" | "drop", index: number) => {
-    const go = () => st().act(`Stash ${op}`, (r) => api.stashOp(r, op, index), true);
+  stashOp: (op: "apply" | "pop" | "drop", index: number, hash?: string) => {
+    const go = () => st().act(`Stash ${op}`, (r) => api.stashOp(r, op, index, hash), true);
     if (op !== "drop") return void go();
     form({ title: "Drop this stash?", message: "Ctrl+Z brings it back.", confirm: "Drop", danger: true, onSubmit: async () => { await go(); } });
   },
@@ -579,10 +580,10 @@ export const backupMenu = (e: React.MouseEvent, b: Backup) =>
 
 export const stashMenu = (e: React.MouseEvent, x: Stash) =>
   menu(e, [
-    { label: "Apply", onClick: () => A.stashOp("apply", x.index) },
-    { label: "Pop", onClick: () => A.stashOp("pop", x.index) },
+    { label: "Apply", onClick: () => A.stashOp("apply", x.index, x.hash) },
+    { label: "Pop", onClick: () => A.stashOp("pop", x.index, x.hash) },
     { sep: true },
-    { label: "Drop…", danger: true, onClick: () => A.stashOp("drop", x.index) },
+    { label: "Drop…", danger: true, onClick: () => A.stashOp("drop", x.index, x.hash) },
   ]);
 
 export const remoteMenu = (e: React.MouseEvent, name: string) =>

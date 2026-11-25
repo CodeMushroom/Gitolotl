@@ -2,7 +2,7 @@ import { useState } from "react";
 import type { ReactNode } from "react";
 import { A, backupMenu, describe, openExternal, prMenu, refMenu, remoteMenu, stashMenu } from "../actions";
 import type { RefInfo } from "../api";
-import { primaryFirst } from "../branches";
+import { primaryFirst, primaryRank } from "../branches";
 import { fmtDate, st, useStore } from "../store";
 
 function Section({ title, count, action, children }: { title: string; count: number; action?: ReactNode; children: ReactNode }) {
@@ -52,22 +52,29 @@ export function Sidebar() {
   const match = (s: string) => !f || s.toLowerCase().includes(f);
 
   const defaultBranch = useStore((s) => s.defaultBranch);
+  // "My branches" keeps the long-lived branches and the current one, so there is always somewhere to stand
+  const mine = useStore((s) => s.scope) === "mine";
+  const own = (r: RefInfo) => !mine || r.mine || (r.kind === "head" && (r.isHead || primaryRank(r.short, defaultBranch) >= 0));
+  const myPrs = mine && gh?.login ? prs.filter((p) => p.author === gh.login) : prs;
   // main / master / staging and friends stay at the top, however many branches there are
-  const heads = primaryFirst(refs.filter((r) => r.kind === "head" && match(r.short)), (r) => r.short, defaultBranch);
+  const heads = primaryFirst(refs.filter((r) => r.kind === "head" && match(r.short) && own(r)), (r) => r.short, defaultBranch);
   const pinEnd = (g: { pinned: unknown[]; rest: unknown[] }) => g.pinned.length > 0 && g.rest.length > 0 && <div className="sb-pin-end" />;
   const tags = refs.filter((r) => r.kind === "tag" && match(r.short)).reverse();
-  const remoteRefs = refs.filter((r) => r.kind === "remote" && match(r.short));
+  const remoteRefs = refs.filter((r) => r.kind === "remote" && match(r.short) && own(r));
 
   return (
     <div className="sidebar">
       <input className="sb-filter" placeholder="Filter branches, tags…" value={filter} onChange={(e) => setFilter(e.target.value)} />
       <div className="sb-scroll">
-        <Section title="Local" count={heads.pinned.length + heads.rest.length} action={<button className="mini" title="New branch" onClick={() => A.newBranch()}>+</button>}>
+        <Section title={mine ? "My local" : "Local"} count={heads.pinned.length + heads.rest.length} action={<>
+          <button className="mini" title="Clean up old branches, stashes and worktrees…" onClick={() => A.cleanup()}>🧹</button>
+          <button className="mini" title="New branch" onClick={() => A.newBranch()}>+</button>
+        </>}>
           {heads.pinned.map((r) => <RefItem key={r.name} r={r} />)}
           {pinEnd(heads)}
           {heads.rest.map((r) => <RefItem key={r.name} r={r} />)}
         </Section>
-        <Section title="Remote" count={remoteRefs.length} action={<button className="mini" title="Add remote" onClick={() => A.addRemote()}>+</button>}>
+        <Section title={mine ? "My remote" : "Remote"} count={remoteRefs.length} action={<button className="mini" title="Add remote" onClick={() => A.addRemote()}>+</button>}>
           {remotes.map((rm) => (
             <div key={rm.name}>
               <div className="sb-sub" title={rm.url} onContextMenu={(e) => remoteMenu(e, rm.name)}>{rm.name}</div>
@@ -81,8 +88,8 @@ export function Sidebar() {
           {remotes.length === 0 && <div className="hint">No remotes yet</div>}
         </Section>
         {gh && (
-          <Section title="Pull requests" count={prs.length} action={<button className="mini" title="Open a pull request" onClick={() => A.createPr()}>+</button>}>
-            {prs.filter((p) => match(p.title) || match(p.head)).map((p) => (
+          <Section title={mine && gh.login ? "My pull requests" : "Pull requests"} count={myPrs.length} action={<button className="mini" title="Open a pull request" onClick={() => A.createPr()}>+</button>}>
+            {myPrs.filter((p) => match(p.title) || match(p.head)).map((p) => (
               <div key={p.number} className="sb-item" title={`${p.title}\n${p.head} → ${p.base} by ${p.author}\nDouble-click to open on GitHub`}
                 onDoubleClick={() => openExternal(p.url)} onContextMenu={(e) => prMenu(e, p)}>
                 <span className="sb-icon">{p.draft ? "◌" : "⇄"}</span>
@@ -90,7 +97,7 @@ export function Sidebar() {
               </div>
             ))}
             {!gh.login && <button className="link sb-link" onClick={() => st().loadGithub(true)}>Connect GitHub account</button>}
-            {gh.login && prs.length === 0 && <div className="hint">No open pull requests</div>}
+            {gh.login && myPrs.length === 0 && <div className="hint">No open pull requests</div>}
           </Section>
         )}
         {worktrees.length > 1 && (

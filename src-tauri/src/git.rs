@@ -509,7 +509,7 @@ fn has_head(repo: &str) -> bool {
 }
 
 #[tauri::command(async)]
-pub fn get_log(repo: String, limit: u32, all: bool, path: Option<String>) -> R<Vec<Commit>> {
+pub fn get_log(repo: String, limit: u32, all: bool, path: Option<String>, mine: bool) -> R<Vec<Commit>> {
     if !has_head(&repo) && !all {
         return Ok(vec![]);
     }
@@ -518,6 +518,21 @@ pub fn get_log(repo: String, limit: u32, all: bool, path: Option<String>) -> R<V
     if let Some(p) = &path {
         paths_ok(std::slice::from_ref(p))?;
         a.extend(["--follow", "--", p.as_str()]);
+    } else if mine {
+        // Only the branches whose newest commit is the user's, and what is checked out.
+        let who = me(&repo);
+        let refs = run(&repo, &["for-each-ref", "--format=%(refname)%1f%(authoremail)%1f%(authorname)", "refs/heads", "refs/remotes"])?;
+        let mut revs = String::from("HEAD\n");
+        for l in refs.lines() {
+            let f: Vec<&str> = l.split('\x1f').collect();
+            if f.len() == 3 && is_me(&who, f[1], f[2]) {
+                revs.push_str(f[0]);
+                revs.push('\n');
+            }
+        }
+        a.push("--stdin");
+        let o = exec(&dir(&repo)?, &a, Some(revs.as_bytes()), &[])?;
+        return if o.code == 0 { Ok(parse_log(&o.stdout)) } else { Err(fail(&o)) };
     } else if all {
         a.extend(["--branches", "--remotes", "--tags", "HEAD"]);
         if !has_head(&repo) {
@@ -525,6 +540,18 @@ pub fn get_log(repo: String, limit: u32, all: bool, path: Option<String>) -> R<V
         }
     }
     Ok(parse_log(&run(&repo, &a)?))
+}
+
+/// Who the user is in this repository: (email, name), lower-cased. Either may be empty.
+fn me(repo: &str) -> (String, String) {
+    let get = |k: &str| run(repo, &["config", "--get", k]).unwrap_or_default().trim().to_lowercase();
+    (get("user.email"), get("user.name"))
+}
+
+/// `email` may come wrapped in angle brackets, as for-each-ref prints it.
+fn is_me(me: &(String, String), email: &str, name: &str) -> bool {
+    let email = email.trim_matches(|c| c == '<' || c == '>').to_lowercase();
+    (!me.0.is_empty() && email == me.0) || (!me.1.is_empty() && name.to_lowercase() == me.1)
 }
 
 #[derive(Serialize)]
@@ -540,6 +567,10 @@ pub struct RefInfo {
     behind: u32,
     gone: bool,
     is_head: bool,
+    /// the newest commit on it was written by the user
+    mine: bool,
+    /// when that commit was made (unix seconds)
+    time: i64,
 }
 
 #[tauri::command(async)]
@@ -548,16 +579,17 @@ pub fn get_refs(repo: String) -> R<Vec<RefInfo>> {
         &repo,
         &[
             "for-each-ref",
-            "--format=%(refname)%1f%(objectname)%1f%(upstream:short)%1f%(upstream:track,nobracket)%1f%(HEAD)%1f%(*objectname)",
+            "--format=%(refname)%1f%(objectname)%1f%(upstream:short)%1f%(upstream:track,nobracket)%1f%(HEAD)%1f%(*objectname)%1f%(authoremail)%1f%(authorname)%1f%(creatordate:unix)",
             "refs/heads",
             "refs/remotes",
             "refs/tags",
         ],
     )?;
+    let who = me(&repo);
     let mut v = vec![];
     for line in out.lines() {
         let f: Vec<&str> = line.split('\x1f').collect();
-        if f.len() < 6 {
+        if f.len() < 9 {
             continue;
         }
         let name = f[0];
@@ -593,6 +625,8 @@ pub fn get_refs(repo: String) -> R<Vec<RefInfo>> {
             behind,
             gone: f[3] == "gone",
             is_head: f[4] == "*",
+            mine: kind != "tag" && is_me(&who, f[6], f[7]),
+            time: f[8].parse().unwrap_or(0),
         });
     }
     Ok(v)
@@ -1508,6 +1542,14 @@ pub fn create_branch(repo: String, name: String, start: Option<String>, checkout
     }
 }
 
+/// Local branches with nothing that `into` does not already have: deleting one loses no commits.
+#[tauri::command(async)]
+pub fn merged_branches(repo: String, into: String) -> R<Vec<String>> {
+    rf(&into)?;
+    let out = run(&repo, &["for-each-ref", "--format=%(refname)", &format!("--merged={into}"), "refs/heads"])?;
+    Ok(out.lines().filter_map(|l| l.strip_prefix("refs/heads/")).map(str::to_string).collect())
+}
+
 #[tauri::command(async)]
 pub fn delete_branch(repo: String, name: String, force: bool) -> R<String> {
     rf(&name)?;
@@ -1827,7 +1869,7 @@ pub fn stash_push(repo: String, message: String, include_untracked: bool) -> R<S
 }
 
 #[tauri::command(async)]
-pub fn stash_op(repo: String, op: String, index: u32) -> R<String> {
+pub fn stash_op(repo: String, op: String, index: u32, hash: Option<String>) -> R<String> {
     let op = match op.as_str() {
         "apply" => "apply",
         "pop" => "pop",
@@ -1835,6 +1877,14 @@ pub fn stash_op(repo: String, op: String, index: u32) -> R<String> {
         _ => return Err("Invalid stash operation".into()),
     };
     let stash = format!("stash@{{{index}}}");
+    // Stashes are numbered from the newest, so a number goes stale when the list changes.
+    // A caller that knows which stash it means says so, and anything else is refused.
+    if let Some(h) = &hash {
+        hex(h)?;
+        if run(&repo, &["rev-parse", "--verify", "-q", &stash]).unwrap_or_default().trim() != h {
+            return Err("The list of stashes has changed, so nothing was done. Refresh and try again.".into());
+        }
+    }
     if op == "drop" {
         backup_tip(&repo, "drop-stash", &stash)?;
     }
@@ -1917,7 +1967,7 @@ mod tests {
         let w = |name: &str, text: &str| std::fs::write(Path::new(&repo).join(name), text).unwrap();
 
         // empty repo is handled
-        assert!(get_log(repo.clone(), 10, true, None).unwrap().is_empty());
+        assert!(get_log(repo.clone(), 10, true, None, false).unwrap().is_empty());
 
         // untracked -> staged -> committed
         let base: String = (1..=30).map(|i| format!("line {i}\n")).collect();
@@ -1945,7 +1995,7 @@ mod tests {
         stage_all(repo.clone()).unwrap();
         commit(repo.clone(), "third".into(), false, false).unwrap();
 
-        let log = get_log(repo.clone(), 10, true, None).unwrap();
+        let log = get_log(repo.clone(), 10, true, None, false).unwrap();
         assert_eq!(log.iter().map(|c| c.subject.as_str()).collect::<Vec<_>>(), ["third", "second", "first"]);
         assert!(log[0].refs.iter().any(|r| r.starts_with("HEAD -> refs/heads/")));
         let det = get_commit_details(repo.clone(), log[1].hash.clone()).unwrap();
@@ -1954,7 +2004,7 @@ mod tests {
         let blame = get_blame(repo.clone(), "a.txt".into(), None).unwrap();
         assert_eq!(blame.len(), 30);
         assert_eq!(blame[1].summary, "second");
-        assert_eq!(get_log(repo.clone(), 10, false, Some("a.txt".into())).unwrap().len(), 3);
+        assert_eq!(get_log(repo.clone(), 10, false, Some("a.txt".into()), false).unwrap().len(), 3);
 
         // branches, tags, refs
         create_branch(repo.clone(), "feature/x".into(), Some(log[2].hash.clone()), false, None).unwrap();
@@ -1976,7 +2026,7 @@ mod tests {
             ],
         )
         .unwrap();
-        let log2 = get_log(repo.clone(), 10, false, None).unwrap();
+        let log2 = get_log(repo.clone(), 10, false, None, false).unwrap();
         assert_eq!(log2.len(), 2, "squash should leave two commits");
         assert!(get_status(repo.clone()).unwrap().state.is_empty());
 
@@ -1985,7 +2035,7 @@ mod tests {
         stash_push(repo.clone(), "wip".into(), true).unwrap();
         assert!(get_status(repo.clone()).unwrap().files.is_empty());
         assert_eq!(get_stashes(repo.clone()).unwrap().len(), 1);
-        stash_op(repo.clone(), "pop".into(), 0).unwrap();
+        stash_op(repo.clone(), "pop".into(), 0, None).unwrap();
         discard(repo.clone(), vec!["a.txt".into()], vec![]).unwrap();
         assert!(get_status(repo.clone()).unwrap().files.is_empty());
 
@@ -2017,7 +2067,7 @@ mod tests {
         }
         let info = repo_open(repo.clone()).unwrap();
         let repo = info.path.clone();
-        let log = get_log(repo.clone(), 500, true, None).unwrap();
+        let log = get_log(repo.clone(), 500, true, None, false).unwrap();
         let status = get_status(repo.clone()).unwrap();
         let mut details = serde_json::Map::new();
         for c in &log {
@@ -2120,7 +2170,7 @@ mod tests {
         std::fs::write(p("a.txt"), "stashed work\n").unwrap();
         stash_push(repo.clone(), "wip".into(), true).unwrap();
         let stash_hash = get_stashes(repo.clone()).unwrap()[0].hash.clone();
-        stash_op(repo.clone(), "drop".into(), 0).unwrap();
+        stash_op(repo.clone(), "drop".into(), 0, None).unwrap();
         commit(repo.clone(), "first, amended".into(), true, false).unwrap();
         let b = get_backups(repo.clone()).unwrap();
         assert!(b.iter().any(|x| x.label == "delete-branch" && x.hash == second));
@@ -2200,7 +2250,7 @@ mod tests {
         assert_eq!(run(&repo, &["rev-parse", "refs/tags/v9"]).unwrap().trim(), first);
         std::fs::write(p("a.txt"), "stashed\n").unwrap();
         stash_push(repo.clone(), "wip".into(), true).unwrap();
-        stash_op(repo.clone(), "drop".into(), 0).unwrap();
+        stash_op(repo.clone(), "drop".into(), 0, None).unwrap();
         restore_backup(repo.clone(), newest("drop-stash").name).unwrap();
         assert_eq!(get_stashes(repo.clone()).unwrap().len(), 1);
 
@@ -2324,7 +2374,7 @@ mod tests {
         assert!(stashes[0].message.contains("Left on f1 when creating f2"), "{}", stashes[0].message);
         // ...and comes back whole, staged state included
         checkout(repo.clone(), "f1".into(), "head".into()).unwrap();
-        stash_op(repo.clone(), "pop".into(), 0).unwrap();
+        stash_op(repo.clone(), "pop".into(), 0, None).unwrap();
         assert_eq!(read("b.txt"), "my edit\n");
         assert_eq!(read("new.txt"), "brand new\n");
         assert!(get_stashes(repo.clone()).unwrap().is_empty());
@@ -2513,7 +2563,7 @@ mod tests {
         fingerprint(Path::new(&repo), &mut before);
 
         let head = get_status(repo.clone()).unwrap().head;
-        get_log(repo.clone(), 100, true, None).unwrap();
+        get_log(repo.clone(), 100, true, None, false).unwrap();
         get_refs(repo.clone()).unwrap();
         get_remotes(repo.clone()).unwrap();
         get_stashes(repo.clone()).unwrap();
@@ -2547,5 +2597,80 @@ mod tests {
         assert_eq!(c[0].parents, vec!["bb", "cc"]);
         assert_eq!(c[0].refs.len(), 2);
         assert_eq!(c[0].coauthors.len(), 2);
+    }
+
+    /// The "mine" view, and what clean-up relies on: knowing what is merged, never dropping
+    /// the wrong stash, and clearing a worktree whose folder is gone.
+    #[test]
+    fn mine_and_cleanup() {
+        let (root, repo) = temp_repo("cleanup");
+        let p = |n: &str| Path::new(&repo).join(n);
+        let save = |file: &str, other: bool| {
+            std::fs::write(p(file), file).unwrap();
+            stage_all(repo.clone()).unwrap();
+            let mut a = vec!["commit", "-m", file];
+            if other {
+                a.splice(0..0, ["-c", "user.name=Someone Else", "-c", "user.email=else@example.com"]);
+            }
+            run(&repo, &a).unwrap();
+            run(&repo, &["rev-parse", "HEAD"]).unwrap().trim().to_string()
+        };
+        save("a.txt", false);
+        let main = cur_branch(&repo);
+        create_branch(repo.clone(), "done".into(), None, false, None).unwrap();
+        create_branch(repo.clone(), "theirs".into(), None, true, None).unwrap();
+        let theirs = save("theirs.txt", true);
+        checkout(repo.clone(), main.clone(), "head".into()).unwrap();
+        create_branch(repo.clone(), "my-work".into(), None, true, None).unwrap();
+        let my = save("mine.txt", false);
+        checkout(repo.clone(), main.clone(), "head".into()).unwrap();
+
+        // mine: decided by who wrote the newest commit
+        let refs = get_refs(repo.clone()).unwrap();
+        let r = |n: &str| refs.iter().find(|r| r.short == n).unwrap();
+        assert!(r("my-work").mine && r(&main).mine && !r("theirs").mine);
+        assert!(r("my-work").time > 1_600_000_000);
+        let has = |log: &[Commit], h: &str| log.iter().any(|c| c.hash == h);
+        let all = get_log(repo.clone(), 100, true, None, false).unwrap();
+        assert!(has(&all, &my) && has(&all, &theirs));
+        let mine = get_log(repo.clone(), 100, true, None, true).unwrap();
+        assert!(has(&mine, &my) && !has(&mine, &theirs), "someone else's branch is not in my view");
+        // what is checked out is always shown, whoever wrote it
+        checkout(repo.clone(), "theirs".into(), "head".into()).unwrap();
+        assert!(has(&get_log(repo.clone(), 100, true, None, true).unwrap(), &theirs));
+        checkout(repo.clone(), main.clone(), "head".into()).unwrap();
+
+        // merged: only branches with nothing of their own
+        let merged = merged_branches(repo.clone(), main.clone()).unwrap();
+        assert!(merged.contains(&"done".to_string()) && merged.contains(&main));
+        assert!(!merged.contains(&"theirs".to_string()) && !merged.contains(&"my-work".to_string()));
+        assert!(merged_branches(repo.clone(), "--all".into()).is_err());
+
+        // a stash is dropped only if it is still the one that was meant
+        std::fs::write(p("a.txt"), "one").unwrap();
+        stash_push(repo.clone(), "one".into(), true).unwrap();
+        std::fs::write(p("a.txt"), "two").unwrap();
+        stash_push(repo.clone(), "two".into(), true).unwrap();
+        let st = get_stashes(repo.clone()).unwrap();
+        assert_eq!((st[0].message.ends_with("two"), st[1].message.ends_with("one")), (true, true));
+        assert!(stash_op(repo.clone(), "drop".into(), 1, Some(st[0].hash.clone())).is_err());
+        assert_eq!(get_stashes(repo.clone()).unwrap().len(), 2, "a stale number must drop nothing");
+        stash_op(repo.clone(), "drop".into(), 1, Some(st[1].hash.clone())).unwrap();
+        let left = get_stashes(repo.clone()).unwrap();
+        assert_eq!((left.len(), left[0].hash.as_str()), (1, st[0].hash.as_str()));
+        assert!(get_backups(repo.clone()).unwrap().iter().any(|b| b.hash == st[1].hash), "the dropped stash is kept as a snapshot");
+
+        // a worktree whose folder was deleted can be cleared, and its branch survives
+        let wt = root.parent().unwrap().join(format!("gitolotl-cleanup-wt-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&wt);
+        add_worktree(repo.clone(), wt.to_string_lossy().into_owned(), "side".into(), true).unwrap();
+        std::fs::remove_dir_all(&wt).unwrap();
+        let gone: Vec<WorktreeDetail> = get_worktree_details(repo.clone()).unwrap().into_iter().filter(|w| w.missing).collect();
+        assert_eq!(gone.len(), 1);
+        remove_worktree(repo.clone(), gone[0].path.clone()).unwrap();
+        assert_eq!(get_worktrees(repo.clone()).unwrap().len(), 1);
+        assert!(get_refs(repo.clone()).unwrap().iter().any(|r| r.short == "side"));
+
+        let _ = std::fs::remove_dir_all(&root);
     }
 }
