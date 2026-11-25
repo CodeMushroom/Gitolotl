@@ -3,6 +3,10 @@
 The section for a version becomes the "What's new" text of its release and of the in-app update prompt.
 Keep entries short and written for users.
 
+## 0.2.10
+
+- Clicking the branch name in the toolbar copies it to the clipboard, as well as showing it in the graph.
+
 ## 0.2.9
 
 - Clean up now also lists remote branches: only your own, and only when they are merged into the default branch or have had no commits for six months. They are never ticked for you, because deleting one removes it on the server for everyone. Branches with an open pull request are left out.

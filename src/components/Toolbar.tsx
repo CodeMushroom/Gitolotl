@@ -44,8 +44,13 @@ export function Toolbar() {
     <div className="toolbar">
       <div
         className={`branch-box${status && !status.branch ? " detached" : ""}`}
-        title={`${status?.upstream ? `Tracking ${status.upstream}` : "No upstream branch"}\nClick to show this commit in the graph`}
-        onClick={() => { if (status?.head) st().select({ type: "commit", hash: status.head }, true); }}
+        title={`${status?.upstream ? `Tracking ${status.upstream}` : "No upstream branch"}\nClick to copy the name and show this commit in the graph`}
+        onClick={() => {
+          if (!status?.head) return;
+          st().select({ type: "commit", hash: status.head }, true);
+          const name = status.branch ?? status.head;
+          void navigator.clipboard.writeText(name).then(() => st().toast("ok", `Copied ${status.branch ?? name.slice(0, 7)}`), () => {});
+        }}
       >
         <span className="dim">{status?.branch ? "branch" : "detached"}</span>
         <b>{status?.branch ?? status?.head.slice(0, 7) ?? "…"}</b>
