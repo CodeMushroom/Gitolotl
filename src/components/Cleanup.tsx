@@ -8,9 +8,12 @@ const DAY = 86400;
 const OLD_BRANCH = 180 * DAY;
 const OLD_STASH = 90 * DAY;
 
+const GROUPS = ["Worktrees", "Branches", "Remote branches", "Stashes"] as const;
+type Group = (typeof GROUPS)[number];
+
 interface Item {
   id: string;
-  group: "Worktrees" | "Branches" | "Stashes";
+  group: Group;
   title: string;
   why: string;
   /** ticked to begin with: there is a clear sign it is finished with */
@@ -34,7 +37,7 @@ async function scan(repo: string): Promise<Item[]> {
     const r = heads.find((h) => h.short === name);
     if (!r || r.isHead || primary(name)) return null;
     if (r.gone) return { why: "its remote branch was deleted", on: true };
-    if (merged.has(name)) return r.upstream ? { why: `merged into ${into}`, on: true } : { why: `has no commits that ${into} lacks, and was never pushed`, on: false };
+    if (merged.has(r.name)) return r.upstream ? { why: `merged into ${into}`, on: true } : { why: `has no commits that ${into} lacks, and was never pushed`, on: false };
     if (r.time && now - r.time > OLD_BRANCH) return { why: `no commits since ${fmtDate(r.time)}`, on: false };
     return null;
   };
@@ -62,14 +65,26 @@ async function scan(repo: string): Promise<Item[]> {
     const v = held.has(r.short) ? null : verdict(r.short);
     if (v) items.push({ id: `b:${r.short}`, group: "Branches", title: r.short, why: v.why, on: v.on, run: (repo) => api.deleteBranch(repo, r.short, true) });
   }
+  // On the remote only your own branches are offered, and none is ticked: deleting one there
+  // deletes it for everyone. A branch with an open pull request, or that a local branch you
+  // keep still follows, is left alone.
+  const prHeads = new Set(st().prs.map((p) => p.head));
+  const followed = new Set(heads.filter((h) => h.isHead || primary(h.short)).map((h) => h.upstream));
+  for (const r of refs) {
+    if (r.kind !== "remote" || !r.mine) continue;
+    const cut = r.short.indexOf("/");
+    const remote = r.short.slice(0, cut);
+    const name = r.short.slice(cut + 1);
+    if (primary(name) || r.short === into || prHeads.has(name) || followed.has(r.short)) continue;
+    const why = merged.has(r.name) ? `merged into ${into}` : r.time && now - r.time > OLD_BRANCH ? `no commits since ${fmtDate(r.time)}` : null;
+    if (why) items.push({ id: `r:${r.short}`, group: "Remote branches", title: r.short, why: `${why}; deleted on ${remote} for everyone`, on: false, run: (repo) => api.deleteRemoteBranch(repo, remote, name) });
+  }
   // Highest number first: dropping a stash renumbers the ones after it.
   for (const x of [...stashes].reverse()) {
     if (now - x.time > OLD_STASH) items.push({ id: `s:${x.hash}`, group: "Stashes", title: x.message, why: `saved ${fmtDate(x.time)}`, on: false, run: (repo) => api.stashOp(repo, "drop", x.index, x.hash) });
   }
   return items;
 }
-
-const GROUPS = ["Worktrees", "Branches", "Stashes"] as const;
 
 /** Offers what looks finished with. Nothing is removed that the user did not tick. */
 export function Cleanup() {
@@ -111,6 +126,7 @@ export function Cleanup() {
       <p className="dim">
         These look finished with. Tick what should go; nothing else is touched. Deleted branches and dropped stashes are kept as safety snapshots.
         A removed worktree folder is deleted from disk, with any ignored files in it (build output, local settings); git refuses if it holds uncommitted work.
+        Remote branches are deleted on the server for everyone, so only your own are offered.
       </p>
       {done && <div className="cl-done">{done}</div>}
       {err && <div className="form-err">{err}</div>}

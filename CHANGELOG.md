@@ -3,6 +3,10 @@
 The section for a version becomes the "What's new" text of its release and of the in-app update prompt.
 Keep entries short and written for users.
 
+## 0.2.9
+
+- Clean up now also lists remote branches: only your own, and only when they are merged into the default branch or have had no commits for six months. They are never ticked for you, because deleting one removes it on the server for everyone. Branches with an open pull request are left out.
+
 ## 0.2.8
 
 - My branches: the "All branches" box in the toolbar is now a picker with All branches, My branches and Current branch. My branches narrows the graph and the sidebar to branches whose latest commit is yours, plus the primary branches and the one you are on.

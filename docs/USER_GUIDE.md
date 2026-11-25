@@ -124,6 +124,9 @@ with. Nothing is removed unless you tick it.
   with no commits of their own, are listed but not ticked.
 - **Worktrees** are listed when their folder is gone, or when they hold nothing uncommitted and their
   branch is one of the above. The folder is deleted from disk together with any ignored files in it.
+- **Remote branches** are listed only when their latest commit is yours and they are merged into the
+  default branch or have had no commits for six months. They are never ticked for you, because
+  deleting one deletes it on the server for everyone. Branches with an open pull request are left out.
 - **Stashes** older than three months are listed, never ticked for you.
 
 The current branch, the primary branches and the repository's own folder are never offered. Deleted

@@ -1542,12 +1542,13 @@ pub fn create_branch(repo: String, name: String, start: Option<String>, checkout
     }
 }
 
-/// Local branches with nothing that `into` does not already have: deleting one loses no commits.
+/// Branches, local and remote, with nothing that `into` does not already have: deleting one
+/// loses no commits. Full names ("refs/heads/x", "refs/remotes/origin/x").
 #[tauri::command(async)]
 pub fn merged_branches(repo: String, into: String) -> R<Vec<String>> {
     rf(&into)?;
-    let out = run(&repo, &["for-each-ref", "--format=%(refname)", &format!("--merged={into}"), "refs/heads"])?;
-    Ok(out.lines().filter_map(|l| l.strip_prefix("refs/heads/")).map(str::to_string).collect())
+    let out = run(&repo, &["for-each-ref", "--format=%(refname)", &format!("--merged={into}"), "refs/heads", "refs/remotes"])?;
+    Ok(out.lines().filter(|l| !l.is_empty()).map(str::to_string).collect())
 }
 
 #[tauri::command(async)]
@@ -2642,8 +2643,15 @@ mod tests {
 
         // merged: only branches with nothing of their own
         let merged = merged_branches(repo.clone(), main.clone()).unwrap();
-        assert!(merged.contains(&"done".to_string()) && merged.contains(&main));
-        assert!(!merged.contains(&"theirs".to_string()) && !merged.contains(&"my-work".to_string()));
+        let is = |n: &str| merged.contains(&format!("refs/heads/{n}"));
+        assert!(is("done") && is(&main) && !is("theirs") && !is("my-work"));
+        // remote branches are judged the same way
+        run(&repo, &["update-ref", "refs/remotes/origin/done", "done"]).unwrap();
+        run(&repo, &["update-ref", "refs/remotes/origin/theirs", "theirs"]).unwrap();
+        let merged = merged_branches(repo.clone(), main.clone()).unwrap();
+        assert!(merged.contains(&"refs/remotes/origin/done".to_string()) && !merged.contains(&"refs/remotes/origin/theirs".to_string()));
+        run(&repo, &["update-ref", "-d", "refs/remotes/origin/done"]).unwrap();
+        run(&repo, &["update-ref", "-d", "refs/remotes/origin/theirs"]).unwrap();
         assert!(merged_branches(repo.clone(), "--all".into()).is_err());
 
         // a stash is dropped only if it is still the one that was meant
