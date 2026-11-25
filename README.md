@@ -142,7 +142,7 @@ npm run tauri dev
 - [Safety](docs/SAFETY.md): what protects your repository, and how to recover anything
 - [Architecture](docs/ARCHITECTURE.md): how the code is laid out and the security model
 - [Releasing](docs/RELEASING.md): installers, the auto-updater, signing
-- [Contributing](CONTRIBUTING.md): how to send a change
+- [Contributing](CONTRIBUTING.md): how to send a change, and the [contributor agreement](CLA.md)
 
 ## Feedback
 

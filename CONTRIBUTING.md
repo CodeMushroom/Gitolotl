@@ -37,11 +37,13 @@ node scripts/test-lines-patch.mjs
 cd src-tauri && cargo test --lib
 ```
 
-## Sign your commits off
+## Contributor agreement
 
-Contributions are accepted under the [Developer Certificate of Origin](https://developercertificate.org/):
-by adding a `Signed-off-by` line you state that you wrote the change, or have the right to submit it, and
-that it may be distributed under Apache 2.0.
+Contributions are accepted under the [Gitolotl Contributor Agreement](CLA.md). It is short: you keep
+your copyright, you confirm the change is yours to give, and you let CodeMushroom distribute it as part
+of Gitolotl under Apache 2.0 or other terms. A pull request cannot be merged without it.
+
+You agree by ticking the box in the pull request, or by signing your commits off:
 
 ```bash
 git commit -s
