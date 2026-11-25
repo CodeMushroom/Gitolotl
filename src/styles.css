@@ -466,9 +466,9 @@ body {
 /* ---------- branch badges follow their graph line ---------- */
 /* A badge on the graph takes the colour of the line its commit sits on. Local branches are
    tinted, remote branches are outlined, and the checked-out branch is filled in. */
-.row .row-msg .chip.lane { color: var(--chip); border-color: color-mix(in srgb, var(--chip) 55%, transparent); background: color-mix(in srgb, var(--chip) 14%, transparent); }
-.row .row-msg .chip.lane.remote { background: transparent; }
-.row .row-msg .chip.lane.head.current { color: #0c1b21; background: var(--chip); border-color: transparent; font-weight: 700; box-shadow: 0 0 12px color-mix(in srgb, var(--chip) 55%, transparent); }
+.row .chip.lane { color: var(--chip); border-color: color-mix(in srgb, var(--chip) 55%, transparent); background: color-mix(in srgb, var(--chip) 14%, transparent); }
+.row .chip.lane.remote { background: transparent; }
+.row .chip.lane.head.current { color: #0c1b21; background: var(--chip); border-color: transparent; font-weight: 700; box-shadow: 0 0 12px color-mix(in srgb, var(--chip) 55%, transparent); }
 
 /* primary branches pinned to the top of a list */
 .sb-pin-end { height: 1px; margin: 4px 16px 4px 26px; background: var(--line); opacity: 0.7; }
@@ -494,3 +494,23 @@ body.resizing { cursor: col-resize; user-select: none; }
 .graph-head .split::after { opacity: 0.35; background: linear-gradient(90deg, transparent 3.5px, var(--line) 3.5px, var(--line) 4.5px, transparent 4.5px); }
 .graph-head .split:hover::after { opacity: 1; background: linear-gradient(90deg, transparent 3px, var(--accent2) 3px, var(--accent2) 5px, transparent 5px); }
 .graph.clipped .graph-cell { overflow: hidden; }
+
+/* ---------- Branch / Tag column ---------- */
+.row-refs { width: var(--col-refs, 190px); flex: none; height: 100%; box-sizing: border-box; padding-left: 8px; display: flex; align-items: center; gap: 5px; overflow: hidden; }
+.row-refs .chip { flex: 0 1 auto; min-width: 0; }
+.row-refs .more { flex: none; font-size: 10.5px; line-height: 16px; padding: 0 5px; border-radius: 9px; color: var(--dim); border: 1px solid var(--line); }
+.row-refs .rest { display: none; gap: 5px; }
+/* hovering a row's labels spreads them all out over the graph */
+.row-refs.many:hover { overflow: visible; position: relative; z-index: 3; }
+.row-refs.many:hover .more { display: none; }
+.row-refs.many:hover .rest { display: flex; }
+.row-refs.many:hover .chip { flex: none; max-width: none; background: var(--bg2); }
+.row-refs.many:hover .chip.lane { background: color-mix(in srgb, var(--chip) 18%, var(--bg2)); }
+.row-refs.many:hover .chip.lane.head.current { background: var(--chip); }
+.graph-head .gh-refs { width: var(--col-refs, 190px); }
+
+/* what you are working on, at the top of the changes panel */
+.wip-head { display: flex; align-items: baseline; gap: 6px; padding: 10px 12px 6px; border-bottom: 1px solid var(--line); white-space: nowrap; }
+.wip-head .dim { font-size: 11px; text-transform: uppercase; letter-spacing: 0.06em; }
+.wip-head b { color: var(--accent); overflow: hidden; text-overflow: ellipsis; }
+.branch-box { cursor: pointer; }

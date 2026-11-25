@@ -19,7 +19,7 @@ agent. Nothing needs to be set up inside the app. Your name and email can be cha
 | **Tabs** | Open repositories. `+` opens another. |
 | **Toolbar** | Current branch, Fetch / Pull / Push (with behind / ahead counts), Branch, Stash, Pop, PR, filters and search. |
 | **Sidebar** | Local branches, remotes, pull requests, worktrees, stashes, safety snapshots, tags. The filter box narrows all of them. |
-| **Graph** | The commit history. A dashed **WIP** row at the top appears when you have uncommitted changes. |
+| **Graph** | The commit history, with branch and tag labels in their own column on the left. The branch you are on is always the first line. A dashed **WIP** row at the top appears when you have uncommitted changes, joined to the commit you are on. |
 | **Right panel** | The staging area (WIP selected) or the selected commit's details and files. |
 
 Drag the edge of the sidebar or the right panel to resize it, and the dividers in the graph's header to resize

@@ -1598,6 +1598,7 @@ pub fn pull(repo: String, mode: String) -> R<String> {
         "ff-only" => "--ff-only",
         _ => "--no-rebase",
     };
+    dir(&repo)?;
     if run(&repo, &["rev-parse", "-q", "--verify", "@{upstream}"]).is_ok() {
         return run_msg(&repo, &["pull", flag]);
     }
@@ -2287,6 +2288,8 @@ mod tests {
 
         let _ = std::fs::remove_dir_all(root);
         let _ = std::fs::remove_dir_all(bare);
+        // the folder itself is gone (a removed worktree): say that, not "not on a branch"
+        assert!(pull(repo.clone(), "merge".into()).unwrap_err().contains("Not a directory"));
     }
 
     /// Looking at a repository must never modify it.

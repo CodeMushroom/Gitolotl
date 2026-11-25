@@ -32,12 +32,13 @@ const load = <T,>(k: string, d: T): T => {
 const save = (k: string, v: unknown) => { try { localStorage.setItem(k, JSON.stringify(v)); } catch { /* ignore */ } };
 
 /** Widths the user can drag, in pixels. `graph` caps the lane column; null shows every lane. */
-export interface Layout { sidebar: number; panel: number; author: number; date: number; graph: number | null }
-export const LAYOUT: Layout = { sidebar: 250, panel: 380, author: 150, date: 86, graph: null };
+export interface Layout { sidebar: number; panel: number; refs: number; author: number; date: number; graph: number | null }
+export const LAYOUT: Layout = { sidebar: 250, panel: 380, refs: 190, author: 150, date: 86, graph: null };
 const applyLayout = (l: Layout) => {
   const s = document.documentElement.style;
   s.setProperty("--sb-w", `${l.sidebar}px`);
   s.setProperty("--panel-w", `${l.panel}px`);
+  s.setProperty("--col-refs", `${l.refs}px`);
   s.setProperty("--col-author", `${l.author}px`);
   s.setProperty("--col-date", `${l.date}px`);
 };
@@ -223,7 +224,7 @@ export const useStore = create<State>((set, get) => ({
       const sel = get().selected;
       if (sel?.type === "wip" && status.files.length === 0 && !status.state) set({ selected: null, openFile: null });
     } catch (e) {
-      get().toast("err", String(e));
+      if (!lost(repo, e)) get().toast("err", String(e));
     }
   },
 
@@ -237,7 +238,7 @@ export const useStore = create<State>((set, get) => ({
       if (JSON.stringify(prev) === JSON.stringify(status)) return;
       if (prev && (prev.head !== status.head || prev.branch !== status.branch)) await get().refresh();
       else set({ status });
-    } catch { /* transient */ }
+    } catch (e) { lost(repo, e); /* anything else is transient */ }
   },
 
   loadGithub: async (interactive = false) => {
@@ -265,7 +266,7 @@ export const useStore = create<State>((set, get) => ({
       if (!quiet) get().toast("ok", typeof out === "string" && out.trim() ? `${label}\n${out.trim()}` : label);
     } catch (e) {
       ok = false;
-      get().toast("err", `${label} failed\n${String(e)}`);
+      if (!lost(repo, e)) get().toast("err", `${label} failed\n${String(e)}`);
     }
     set({ busy: null });
     await get().refresh();
@@ -305,3 +306,19 @@ export const fmtDate = (t: number) => {
   return d.toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric" });
 };
 export const fullDate = (t: number) => new Date(t * 1000).toLocaleString();
+
+/**
+ * The open repository's folder is gone: a worktree that was removed, or a folder that was
+ * deleted or moved. Say so once and close its tab, instead of failing on every refresh.
+ */
+function lost(path: string, e: unknown): boolean {
+  if (!String(e).includes(`Not a directory: ${path}`)) return false;
+  const s = useStore.getState();
+  if (s.repo?.path !== path) return true;
+  const recent = s.recent.filter((r) => r.path !== path);
+  save("gitolotl.recent", recent);
+  s.set({ recent });
+  s.toast("err", `${path} no longer exists, so its tab was closed.\nIt may have been a worktree that was removed, or the folder was moved or deleted.`);
+  s.closeTab(path);
+  return true;
+}

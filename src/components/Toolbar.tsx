@@ -41,7 +41,11 @@ export function Toolbar() {
   );
   return (
     <div className="toolbar">
-      <div className={`branch-box${status && !status.branch ? " detached" : ""}`} title={status?.upstream ? `Tracking ${status.upstream}` : "No upstream branch"}>
+      <div
+        className={`branch-box${status && !status.branch ? " detached" : ""}`}
+        title={`${status?.upstream ? `Tracking ${status.upstream}` : "No upstream branch"}\nClick to show this commit in the graph`}
+        onClick={() => { if (status?.head) st().select({ type: "commit", hash: status.head }, true); }}
+      >
         <span className="dim">{status?.branch ? "branch" : "detached"}</span>
         <b>{status?.branch ?? status?.head.slice(0, 7) ?? "…"}</b>
       </div>

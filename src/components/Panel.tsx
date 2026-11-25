@@ -98,8 +98,12 @@ function WipPanel() {
           </div>
         </div>
       )}
+      <div className="wip-head" title="Uncommitted changes in your working folder">
+        <span className="dim">Your changes on</span>
+        <b>{status.branch ?? `${status.head.slice(0, 7)} (detached)`}</b>
+      </div>
       <div className="section-h">
-        <span>Unstaged ({unstaged.length})</span>
+        <span>Unstaged files ({unstaged.length})</span>
         <span className="grow" />
         {unstaged.length > 0 && <button className="link" title="Review every unstaged change in one scroll" onClick={() => A.reviewAll("worktree")}>Review</button>}
         {unstaged.length > 0 && <button className="link danger" onClick={() => A.discard(unstaged)}>Discard all</button>}
@@ -107,7 +111,7 @@ function WipPanel() {
       </div>
       <div className="files">{list(unstaged, false)}{unstaged.length === 0 && <div className="hint">Working tree clean</div>}</div>
       <div className="section-h">
-        <span>Staged ({staged.length})</span>
+        <span>Staged files ({staged.length})</span>
         <span className="grow" />
         {staged.length > 0 && <button className="link" title="Copy the staged diff, e.g. to ask an AI for a commit message or a review" onClick={() => A.copyForAi("staged")}>Copy for AI</button>}
         {staged.length > 0 && <button className="link" onClick={() => A.reviewAll("staged")}>Review</button>}

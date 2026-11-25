@@ -3,6 +3,13 @@
 The section for a version becomes the "What's new" text of its release and of the in-app update prompt.
 Keep entries short and written for users.
 
+## 0.2.6
+
+- Branch and tag labels have their own column to the left of the graph, so they no longer squeeze the commit message. A branch and its remote copy on the same commit share one label; extra labels show as "+2" and open on hover.
+- The branch you are on is always the first line of the graph, and the WIP row is joined to it by a dashed line and says which branch your changes are on and how many are staged.
+- The changes panel is headed with the branch you are working on. Clicking the branch name in the toolbar jumps to it in the graph.
+- When an open repository's folder no longer exists (for example a removed worktree), Gitolotl says so once and closes its tab instead of repeating "Not a directory".
+
 ## 0.2.5
 
 - The graph now shows where a branch started: its line runs down to the commit it was cut from instead of folding into a neighbouring line.
