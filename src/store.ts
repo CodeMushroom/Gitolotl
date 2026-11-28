@@ -201,6 +201,7 @@ export const useStore = create<State>((set, get) => ({
       selected: null, details: null, openFile: null, search: "", limit: 3000,
       reviewed: load<Record<string, true>>(`gitolotl.reviewed:${info.path}`, {}),
     });
+    void api.watch(info.path).catch(() => { /* the periodic check still runs */ });
     await get().refresh();
     void get().loadGithub(false);
   },
@@ -217,6 +218,7 @@ export const useStore = create<State>((set, get) => ({
 
   goHome: () => {
     save("gitolotl.active", "");
+    void api.watch(null).catch(() => {});
     set({ repo: null, status: null, commits: [], selected: null, details: null, openFile: null });
   },
 
@@ -318,6 +320,31 @@ export const fmtDate = (t: number) => {
   return d.toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric" });
 };
 export const fullDate = (t: number) => new Date(t * 1000).toLocaleString();
+
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+let want: boolean | null = null;
+let catchingUp = false;
+/**
+ * Something outside Gitolotl changed the open repository (an editor, the git command line, an
+ * agent). `git` says git's own data changed, so branches and history are reloaded too; otherwise
+ * only the list of changed files is. Bursts are folded together, and it waits its turn behind
+ * anything Gitolotl itself is doing.
+ */
+export async function repoChanged(repo: string, git: boolean) {
+  if (useStore.getState().repo?.path !== repo) return;
+  want = (want ?? false) || git;
+  if (catchingUp) return;
+  catchingUp = true;
+  while (want !== null) {
+    const s = useStore.getState();
+    if (s.busy) { await sleep(400); continue; }
+    const full = want;
+    want = null;
+    await (full ? s.refresh() : s.refreshStatus());
+    await sleep(600);
+  }
+  catchingUp = false;
+}
 
 /**
  * The open repository's folder is gone: a worktree that was removed, or a folder that was

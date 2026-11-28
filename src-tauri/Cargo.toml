@@ -1,6 +1,6 @@
 [package]
 name = "gitolotl"
-version = "0.2.10"
+version = "0.2.11"
 description = "Gitolotl - a friendly, secure Git client by CodeMushroom"
 authors = ["CodeMushroom"]
 license = "Apache-2.0"
@@ -22,6 +22,7 @@ serde_json = "1"
 ureq = { version = "2", features = ["json"] }
 tauri-plugin-updater = "2"
 tauri-plugin-process = "2"
+notify = "9.0.0"
 
 [profile.release]
 codegen-units = 1

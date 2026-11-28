@@ -215,4 +215,4 @@ the welcome screen or the command palette ("Check for updates"). Nothing is down
 | Push / fetch fails with an authentication error | Run the same command once in a terminal so your credential helper or SSH agent can sign in. |
 | A passphrase-protected SSH key hangs or fails | Load the key into your SSH agent first; Gitolotl cannot show a passphrase prompt. |
 | Pull requests do not load | Click **Connect GitHub account**, or sign in with `git credential-manager github login`. |
-| The graph looks out of date | Press `F5`. The working tree is re-checked automatically every few seconds while the window is focused. |
+| The graph looks out of date | Press `F5`. Gitolotl watches the repository's folder and updates itself when an editor, the git command line or an AI agent changes something, focused or not. On Linux a very large repository can exceed the system's watch limit; then only git's own data is watched and files are re-checked every few seconds while the window is focused. |

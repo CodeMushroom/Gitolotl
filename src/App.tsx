@@ -1,4 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
+import { listen } from "@tauri-apps/api/event";
 import { useEffect } from "react";
 import { A } from "./actions";
 import { DiffView } from "./components/DiffView";
@@ -9,7 +10,7 @@ import { Panel } from "./components/Panel";
 import { Sidebar } from "./components/Sidebar";
 import { Splitter } from "./components/Splitter";
 import { Tabs, Toolbar } from "./components/Toolbar";
-import { st, useStore } from "./store";
+import { repoChanged, st, useStore } from "./store";
 
 function Welcome() {
   const recent = useStore((s) => s.recent);
@@ -59,6 +60,9 @@ export default function App() {
     const updates = import.meta.env.DEV ? undefined : setInterval(() => void A.checkForUpdates(), 4 * 3600 * 1000);
     if (!import.meta.env.DEV) void A.checkForUpdates();
 
+    // The folder watcher reports changes made outside the app as they happen. The focus and
+    // timer checks below stay as a net for systems where the whole folder cannot be watched.
+    const unwatch = listen<{ repo: string; git: boolean }>("repo-changed", (e) => void repoChanged(e.payload.repo, e.payload.git)).catch(() => null);
     const onFocus = () => void st().refreshStatus();
     const onKey = (e: KeyboardEvent) => {
       const mod = e.ctrlKey || e.metaKey;
@@ -115,6 +119,7 @@ export default function App() {
       window.removeEventListener("keydown", onKey);
       window.removeEventListener("contextmenu", onCtx);
       clearInterval(timer);
+      void unwatch.then((stop) => stop?.());
       clearInterval(updates);
     };
   }, []);

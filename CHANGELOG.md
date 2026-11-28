@@ -3,6 +3,10 @@
 The section for a version becomes the "What's new" text of its release and of the in-app update prompt.
 Keep entries short and written for users.
 
+## 0.2.11
+
+- Gitolotl now notices changes made outside it as they happen. When an editor, the git command line or an AI agent edits or deletes a file, stages, commits, switches or creates a branch, fetches, pushes or stashes, the window updates by itself, focused or not.
+
 ## 0.2.10
 
 - Clicking the branch name in the toolbar copies it to the clipboard, as well as showing it in the graph.

@@ -1,5 +1,6 @@
 mod git;
 mod github;
+mod watch;
 
 /// `gitolotl <folder>` opens that repository on launch.
 #[tauri::command]
@@ -45,8 +46,10 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_process::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
+        .manage(watch::Watching::default())
         .invoke_handler(tauri::generate_handler![
             initial_repo,
+            watch::watch_repo,
             git::repo_open,
             git::repo_risks,
             git::repo_init,

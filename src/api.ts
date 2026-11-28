@@ -42,6 +42,8 @@ const call = <T>(cmd: string, args?: Record<string, unknown>) => invoke<T>(cmd, 
 
 export const api = {
   repoOpen: (path: string) => call<RepoInfo>("repo_open", { path }),
+  /** watch this repository's folder for outside changes (null: stop); they arrive as "repo-changed" events */
+  watch: (repo: string | null) => call<void>("watch_repo", { repo }),
   repoRisks: (repo: string) => call<RepoRisks>("repo_risks", { repo }),
   repoInit: (path: string) => call<RepoInfo>("repo_init", { path }),
   repoClone: (url: string, parent: string, name: string) => call<RepoInfo>("repo_clone", { url, parent, name }),
